@@ -13,8 +13,8 @@ constexpr int resultsButtonRight = 232;
 void MultiplayerResultsScene::buildDisplayLines() {
     displayLines.clear();
 
-    std::vector<std::pair<u8, Player>> standings;
-    for (const auto& player : multiplayerLink->players)
+    std::vector<std::pair<u8, PlayerMatchStats>> standings;
+    for (const auto& player : multiplayerLink->matchStats)
         standings.push_back(player);
 
     std::sort(standings.begin(), standings.end(),
@@ -24,19 +24,15 @@ void MultiplayerResultsScene::buildDisplayLines() {
                   return left.first < right.first;
               });
 
-#ifndef GBA
-    const auto playerNames = multiplayerLink->getPlayerNames();
-#endif
-
     for (const auto& standing : standings) {
-        const u8 playerId = standing.first;
-        const Player& player = standing.second;
-        std::string playerName = "Player " + std::to_string(playerId + 1);
-#ifndef GBA
-        const auto name = playerNames.find(playerId);
-        if (name != playerNames.end() &&
-            name->second.find_first_not_of(' ') != std::string::npos)
-            playerName = name->second;
+        const PlayerMatchStats& player = standing.second;
+#ifdef GBA
+        const std::string playerName =
+            "Player " + std::to_string(standing.first + 1);
+#else
+        const std::string playerName =
+            player.name.empty() ? "Player " + std::to_string(standing.first + 1)
+                                : player.name;
 #endif
         displayLines.push_back(
             playerName + " - " + std::to_string(player.wins) + "W - " +

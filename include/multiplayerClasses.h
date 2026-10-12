@@ -107,17 +107,10 @@ public:
     bool ready = false;
     bool over = false;
     bool reconnected = false;
-    int wins = 0;
-    int attacks = 0;
-    int attackSeconds = 0;
 
     explicit Player(u8 lId) { linkId = lId; }
 
     explicit Player() { linkId = -1; }
-
-    [[nodiscard]] int attacksPerMinute() const {
-        return attackSeconds ? attacks * 60 / attackSeconds : 0;
-    }
 
     [[nodiscard]] std::string toString() const {
         std::string result;
@@ -128,6 +121,20 @@ public:
         result += (reconnected ? "1 " : "0 ");
 
         return result;
+    }
+};
+
+// Match totals must outlive Player objects recreated during connection resets.
+struct PlayerMatchStats {
+#ifndef GBA
+    std::string name;
+#endif
+    int wins = 0;
+    int attacks = 0;
+    int attackSeconds = 0;
+
+    [[nodiscard]] int attacksPerMinute() const {
+        return attackSeconds ? attacks * 60 / attackSeconds : 0;
     }
 };
 
@@ -191,6 +198,7 @@ public:
     int losses = 0;
     int targetWins = 0; // 0 = endless / no target
     std::vector<MatchResult> matchHistory;
+    std::map<u8, PlayerMatchStats> matchStats;
     bool matchComplete = false;
 
     u32 enemyPower[4] = {1, 1, 1, 1};
@@ -211,6 +219,7 @@ public:
         if (targetWins == 0) {
             wins = losses = 0;
             matchHistory.clear();
+            matchStats.clear();
         }
         playing = false;
         matchComplete = false;
@@ -224,6 +233,7 @@ public:
         wins = losses = 0;
         targetWins = 0;
         matchHistory.clear();
+        matchStats.clear();
         matchComplete = false;
         reset();
     }
@@ -232,6 +242,7 @@ public:
         wins = losses = 0;
         targetWins = 0;
         matchHistory.clear();
+        matchStats.clear();
         matchComplete = false;
         playing = false;
         allOverB = false;
@@ -244,12 +255,27 @@ public:
     void initPlayer(u8 i) { players[i] = Player(i); }
 
     void resetPlayers() {
-        for (auto& i : players) {
-            Player resetPlayer(i.first);
-            resetPlayer.wins = i.second.wins;
-            resetPlayer.attacks = i.second.attacks;
-            resetPlayer.attackSeconds = i.second.attackSeconds;
-            i.second = resetPlayer;
+        for (auto& player : players)
+            player.second = Player(player.first);
+    }
+
+    void captureMatchPlayers() {
+#ifndef GBA
+        const auto playerNames = getPlayerNames();
+#endif
+        for (const auto& player : players) {
+            auto inserted = matchStats.try_emplace(player.first);
+            if (!inserted.second)
+                continue;
+
+#ifndef GBA
+            auto& stats = inserted.first->second;
+            stats.name = "Player " + std::to_string(player.first + 1);
+            const auto name = playerNames.find(player.first);
+            if (name != playerNames.end() &&
+                name->second.find_first_not_of(' ') != std::string::npos)
+                stats.name = name->second;
+#endif
         }
     }
 
@@ -287,22 +313,30 @@ public:
                            int gameFrames) {
         matchHistory.push_back({won, placement, (int)playingPlayerCount});
 
-        Player& player = players[universal->currentPlayerId()];
+        PlayerMatchStats& player = matchStats[universal->currentPlayerId()];
         player.wins += won;
         player.attacks += attacks;
-        player.attackSeconds += std::max(1, (gameFrames + 30) / 60);
+        const int seconds = std::max(1, (gameFrames + 30) / 60);
+        player.attackSeconds += seconds;
 
-        sendEvent(
-            (u16)((SEND_MATCH_ATTACKS << 13) | std::min(attacks, 0x1FFF)));
+        sendRoundStats(player.wins, attacks, seconds);
+    }
+
+    void sendRoundStats(int playerWins, int attacks, int seconds) {
+        // Zero attacks encodes packet 0, reserved by both GBA link modes.
+        // Adding zero changes no remote total; never queue this invalid packet.
+        if (attacks > 0)
+            sendEvent(
+                (u16)((SEND_MATCH_ATTACKS << 13) | std::min(attacks, 0x1FFF)));
         sendEvent((u16)((SEND_MATCH_TIME << 13) |
-                        ((std::min(player.wins, 7) << MATCH_STAT_WINS_SHIFT) |
-                         std::min(std::max(1, (gameFrames + 30) / 60),
+                        ((std::min(playerWins, 7) << MATCH_STAT_WINS_SHIFT) |
+                         std::min(std::max(1, seconds),
                                   MATCH_STAT_SECONDS_MASK))));
     }
 
     void recordRemoteMatchStat(RemotePlayerId playerId, int command,
                                int value) {
-        Player& player = players[playerId.id];
+        PlayerMatchStats& player = matchStats[playerId.id];
         if (command == SEND_MATCH_ATTACKS)
             player.attacks += value;
         else if (command == SEND_MATCH_TIME) {
@@ -692,6 +726,7 @@ struct MultiplayerStates {
         void OnEnter() override {
             bool wasPlaying = Owner().playing;
             if (!wasPlaying) {
+                Owner().captureMatchPlayers();
                 Owner().playing = true;
             }
         }
