@@ -4,7 +4,10 @@
 Uses temporary files and fake tools; no GBA toolchain or existing build needed.
 """
 
+from contextlib import redirect_stdout
+import io
 import json
+import os
 from pathlib import Path
 import runpy
 import subprocess
@@ -125,6 +128,38 @@ class BuildToolsTests(unittest.TestCase):
             json.loads(self.rom.with_suffix('.args.json').read_text()),
             [str(self.rom), '-tDRILL DOZER', '-cV49E', '-m01', '-r00'],
         )
+
+    def test_soundbank_passes_unquoted_archive_path_and_propagates_failure(self):
+        defaults = self.root / 'sound effects.txt'
+        defaults.write_text('SFX_BEEP\n')
+        gbfs = str(self.root / 'native tools' / 'gbfs.exe')
+        argv = ['buildSoundbank.py', 'default', 'mmutil', gbfs, str(defaults)]
+
+        def make_soundbank(command):
+            (self.root / 'soundbank.h').write_text('#define SFX_BEEP 0\n')
+            (self.root / 'soundbank.bin').write_bytes(b'soundbank')
+            return 0
+
+        original_directory = Path.cwd()
+        os.chdir(self.root)
+        try:
+            for failure in (None, subprocess.CalledProcessError(1, gbfs)):
+                with self.subTest(failure=failure is not None), \
+                        patch.object(sys, 'argv', argv), \
+                        patch('os.system', side_effect=make_soundbank), \
+                        patch('subprocess.run', side_effect=failure) as run, \
+                        redirect_stdout(io.StringIO()):
+                    if failure is None:
+                        runpy.run_path(str(TOOLS / 'buildSoundbank.py'), run_name='__main__')
+                    else:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            runpy.run_path(str(TOOLS / 'buildSoundbank.py'), run_name='__main__')
+                    run.assert_called_once_with(
+                        [gbfs, 'audio.gbfs', 'soundbank.bin', 'effect_locations.bin'],
+                        check=True,
+                    )
+        finally:
+            os.chdir(original_directory)
 
     def test_gbafix_failures_make_wrappers_fail(self):
         self.gbafix.write_text('import sys\nsys.exit(9)\n')

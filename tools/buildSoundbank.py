@@ -6,6 +6,7 @@
 # into a binary file that the game can read during runtime.
 
 import os, sys, struct, time, json, platform
+import subprocess
 from pathlib import Path
 
 directory = 'audio'
@@ -163,4 +164,7 @@ with open(location_binary,"wb") as result:
         write(song["location"])
 
 if(build_type == "default"):
-    os.system(f"{gbfs} 'audio.gbfs' {soundbank_binary} {location_binary}")
+    subprocess.run(
+        [gbfs, 'audio.gbfs', soundbank_binary, location_binary],
+        check=True,
+    )
