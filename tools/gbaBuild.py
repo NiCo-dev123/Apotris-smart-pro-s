@@ -6,10 +6,10 @@ import sys
 
 def main(argv):
     # Assign command line arguments to variables
-    padbin, pad_size_1, gba_file, audio_file, pad_size_2, target_out, gbafix = argv[1:8]
+    padbin, pad_size_1, gba_file, audio_file, pad_size_2, target_out, gbafix = argv[1:]
 
     # Pad the GBA file to a certain size
-    subprocess.run([padbin, pad_size_1, gba_file])
+    subprocess.run([padbin, pad_size_1, gba_file], check=True)
 
     # Concatenate the GBA file with an audio file
     with open(target_out, 'wb') as outfile:
@@ -18,10 +18,13 @@ def main(argv):
                 outfile.write(infile.read())
 
     # Pad the resulting file to a certain size
-    subprocess.run([padbin, pad_size_2, target_out])
+    subprocess.run([padbin, pad_size_2, target_out], check=True)
 
     # Fix as valid ROM
-    subprocess.run([gbafix, target_out, '-tAPOTRIS', '-c2ATE', '-m00', '-r04'])
+    subprocess.run(
+        [sys.executable, gbafix, target_out, '-tAPOTRIS', '-c2ATE', '-m00', '-r04'],
+        check=True,
+    )
 
 
 if __name__ == '__main__':
