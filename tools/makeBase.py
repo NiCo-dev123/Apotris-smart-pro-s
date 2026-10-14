@@ -6,13 +6,16 @@ import sys
 
 def main(argv):
     # Assign command line arguments to variables
-    makerom, input_file, output_file, gbafix = argv[1:5]
+    makerom, input_file, output_file, gbafix = argv[1:]
 
-    # Make the base GBA rom
-    subprocess.run([makerom, input_file, output_file])
+    # Make the base GBA rom using the Python that runs this wrapper.
+    subprocess.run([sys.executable, makerom, input_file, output_file], check=True)
 
     # Fix as valid ROM
-    subprocess.run([gbafix, output_file, '-tAPOTRIS', '-c2ATE', '-m00', '-r04'])
+    subprocess.run(
+        [sys.executable, gbafix, output_file, '-tAPOTRIS', '-c2ATE', '-m00', '-r04'],
+        check=True,
+    )
 
 
 if __name__ == '__main__':

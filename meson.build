@@ -960,8 +960,9 @@ else
     # Get build-machine native tools
     gba_tools = subproject('gba-tools')
     gbfs = gba_tools.get_variable('gbfs_executable')
-    gbafix = find_program('gbafix-py', required: true)
-    makerom = find_program('makerom', required: true)
+    # Pass script paths to wrappers, not interpreter-prefixed command arrays.
+    gbafix = find_program('gbafix-py', required: true).full_path()
+    makerom = find_program('makerom', required: true).full_path()
     makebase = files('tools/makeBase.py')
     subproject('mmutil')
     mmutil = find_program('mmutil')
