@@ -1673,31 +1673,68 @@ void PlayOptionScene::resetScoreboard() {
 
 #if !defined(MULTIBOOT) && !defined(GBA)
 
-static void drawQueueWaitingText(int selection) {
+static void initQueueCursor(OBJ_ATTR* cursorSprites[2]) {
+    loadSpriteTiles(16 * 7, blockSprite, 1, 1);
+    for (int i = 0; i < 2; i++) {
+        cursorSprites[i] = &obj_buffer[1 + i];
+        sprite_set_attr(cursorSprites[i], ShapeSquare, 0, 7 * 16, 5, 1);
+        sprite_enable_affine(cursorSprites[i], i, true);
+        sprite_hide(cursorSprites[i]);
+    }
+}
+
+static void drawQueueCursor(OBJ_ATTR* cursorSprites[2], int cursorFloat,
+                            const char* option, int y) {
+    const int offset = (sinLut(cursorFloat) * 2) >> 12;
+    FIXED scale = float2fx((1.0 - ((float)0.1 * offset)));
+    const int length = option ? getVariableWidth(option) : 0;
+
+    for (int i = 0; i < 2; i++) {
+        if (!option) {
+            sprite_hide(cursorSprites[i]);
+            continue;
+        }
+        sprite_unhide(cursorSprites[i], 0);
+        sprite_enable_affine(cursorSprites[i], i, true);
+        sprite_set_size(cursorSprites[i], scale, i);
+        const int x = 120 - ((length + 8) / 2 + offset + 4) * (i ? -1 : 1) - 8;
+        sprite_set_pos(cursorSprites[i], x, y - 5);
+    }
+    showSprites(128);
+}
+
+static void drawQueueWaitingText() {
     clearText();
     aprint("Waiting for connection...", 2, 7);
     aprint("You can play while waiting", 2, 9);
-    aprint(selection == 0 ? "> Play while waiting" : "  Play while waiting", 5,
-           13);
-    aprint(selection == 1 ? "> Cancel queue" : "  Cancel queue", 8, 15);
+    naprint("Play while waiting",
+            (240 - getVariableWidth("Play while waiting")) / 2, 13 * 8);
+    naprint("Cancel queue", (240 - getVariableWidth("Cancel queue")) / 2,
+            15 * 8);
 }
 
 void QueueWaitingScene::init() {
     clearSprites(128);
-    clearSmallText();
+    resetSmallText();
+    initQueueCursor(cursorSprites);
     setTiles(26, 0, 32 * 32,
              tileBuild(35 * (!savefile->settings.lightMode), false, false, 0));
     setTiles(27, 0, 32 * 32, tileBuild(34, false, false, 0));
-    drawQueueWaitingText(selection);
+    drawQueueWaitingText();
 }
 
-void QueueWaitingScene::draw() { fallingBlocks(); }
+void QueueWaitingScene::draw() {
+    fallingBlocks();
+    toggleBG(3, true);
+    drawQueueCursor(cursorSprites, cursorFloat,
+                    selection == 0 ? "Play while waiting" : "Cancel queue",
+                    (13 + selection * 2) * 8);
+}
 
 bool QueueWaitingScene::control() {
     MenuKeys k = savefile->settings.menuKeys;
     if (key_hit(k.up) || key_hit(k.down)) {
         selection = !selection;
-        drawQueueWaitingText(selection);
         sfx(SFX_MENUMOVE);
     }
 
@@ -1727,21 +1764,24 @@ bool QueueWaitingScene::control() {
 void QueueWaitingScene::update() {
     canDraw = true;
     key_poll();
+    cursorFloat = (cursorFloat + 6) % 512;
     control();
 }
 
 void QueueWaitingScene::deinit() {
+    clearSprites(128);
+    showSprites(128);
     clearText();
-    clearSmallText();
+    resetSmallText();
 }
 
-static void drawMatchFoundText(int selection, int frames) {
+static void drawMatchFoundText(int frames) {
     clearText();
     aprint("MATCH FOUND", 9, 7);
     aprint("Ready to battle?", 6, 9);
     aprint("Starting in " + std::to_string((frames + 59) / 60) + "s", 6, 11);
-    aprint(selection == 0 ? "> Accept" : "  Accept", 10, 14);
-    aprint(selection == 1 ? "> Deny" : "  Deny", 10, 16);
+    naprint("Accept", (240 - getVariableWidth("Accept")) / 2, 14 * 8);
+    naprint("Deny", (240 - getVariableWidth("Deny")) / 2, 16 * 8);
 }
 
 void MatchFoundScene::init() {
@@ -1749,12 +1789,13 @@ void MatchFoundScene::init() {
     MatchmakingQueue::activateMatchFoundScene();
 
     clearSprites(128);
-    clearSmallText();
+    resetSmallText();
+    initQueueCursor(cursorSprites);
     setTiles(26, 0, 32 * 32,
              tileBuild(35 * (!savefile->settings.lightMode), false, false, 0));
     setTiles(27, 0, 32 * 32, tileBuild(34, false, false, 0));
     enableBlend((0b101110 << 8) + (1 << 6) + (1 << 3));
-    drawMatchFoundText(selection, frames);
+    drawMatchFoundText(frames);
 
     if (returnToGame && !paused) {
         paused = true;
@@ -1769,7 +1810,6 @@ bool MatchFoundScene::control() {
     if (key_hit(k.up) || key_hit(k.down) || key_hit(k.left) ||
         key_hit(k.right)) {
         selection = selection == 0 ? 1 : 0;
-        drawMatchFoundText(selection, frames);
         sfx(SFX_MENUMOVE);
     } else if (key_hit(k.cancel)) {
         sfx(SFX_MENUCANCEL);
@@ -1790,6 +1830,7 @@ bool MatchFoundScene::control() {
 void MatchFoundScene::update() {
     canDraw = true;
     key_poll();
+    cursorFloat = (cursorFloat + 6) % 512;
     if (control())
         return;
 
@@ -1799,14 +1840,24 @@ void MatchFoundScene::update() {
         return;
     }
 
-    drawMatchFoundText(selection, frames);
+    drawMatchFoundText(frames);
 }
 
-void MatchFoundScene::draw() { fallingBlocks(); }
+void MatchFoundScene::draw() {
+    fallingBlocks();
+    toggleBG(3, true);
+    drawQueueCursor(cursorSprites, cursorFloat,
+                    selection < 0    ? nullptr
+                    : selection == 0 ? "Accept"
+                                     : "Deny",
+                    (14 + selection * 2) * 8);
+}
 
 void MatchFoundScene::deinit() {
+    clearSprites(128);
+    showSprites(128);
     clearText();
-    clearSmallText();
+    resetSmallText();
     enableBlend(previousBlendInfo);
     if (pausedGame) {
         paused = false;

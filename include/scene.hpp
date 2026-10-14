@@ -374,6 +374,8 @@ public:
 class QueueWaitingScene : public Scene {
 public:
     int selection = 0;
+    int cursorFloat = 0;
+    OBJ_ATTR* cursorSprites[2];
 
     void draw();
     void update();
@@ -384,11 +386,14 @@ public:
         return [] { return new ModeListScene(); };
     };
     bool isQueueWaitingScene() const override { return true; }
+    ~QueueWaitingScene() { deinit(); };
 };
 
 class MatchFoundScene : public Scene {
 public:
     int selection = -1;
+    int cursorFloat = 0;
+    OBJ_ATTR* cursorSprites[2];
     int frames = 10 * 60;
     int previousBlendInfo = 0;
     bool pausedGame = false;
