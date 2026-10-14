@@ -519,7 +519,9 @@ bool GameScene::reconnect() {
 
     MenuKeys k = savefile->settings.menuKeys;
 
-    naprint("Connection Lost", 8, 8);
+    const int viewportWidth = savefile->settings.aspectRatio == 0 ? 240 : 214;
+    const int viewportLeft = (240 - viewportWidth) / 2;
+    naprint("Connection Lost", viewportLeft + 8, 8);
 
     std::string str = "Attempting to Reconnect...";
     naprint(str, 120 - getVariableWidth(str) / 2, 80);
