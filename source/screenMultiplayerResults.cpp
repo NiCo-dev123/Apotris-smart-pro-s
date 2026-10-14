@@ -7,7 +7,14 @@
 
 namespace {
 constexpr int resultsButtonY = 16;
-constexpr int resultsButtonRight = 232;
+int resultsViewportWidth() {
+    return savefile->settings.aspectRatio == 0 ? 240 : 214;
+}
+
+int resultsButtonRight() {
+    // Leave room for the animated block cursor inside the viewport.
+    return (240 + resultsViewportWidth()) / 2 - 12;
+}
 } // namespace
 
 void MultiplayerResultsScene::buildDisplayLines() {
@@ -27,16 +34,23 @@ void MultiplayerResultsScene::buildDisplayLines() {
     for (const auto& standing : standings) {
         const PlayerMatchStats& player = standing.second;
 #ifdef GBA
-        const std::string playerName =
-            "Player " + std::to_string(standing.first + 1);
+        std::string playerName = "Player " + std::to_string(standing.first + 1);
 #else
-        const std::string playerName =
+        std::string playerName =
             player.name.empty() ? "Player " + std::to_string(standing.first + 1)
                                 : player.name;
 #endif
-        displayLines.push_back(
-            playerName + " - " + std::to_string(player.wins) + "W - " +
-            std::to_string(player.attacksPerMinute()) + "APM");
+        const std::string stats = " - " + std::to_string(player.wins) + "W - " +
+                                  std::to_string(player.attacksPerMinute()) +
+                                  "APM";
+        const int maxWidth = resultsViewportWidth() - 16;
+        if (getVariableWidth(playerName + stats) > maxWidth) {
+            while (!playerName.empty() &&
+                   getVariableWidth(playerName + "..." + stats) > maxWidth)
+                playerName.pop_back();
+            playerName += "...";
+        }
+        displayLines.push_back(playerName + stats);
     }
 }
 
@@ -52,6 +66,8 @@ void MultiplayerResultsScene::init() {
     setTiles(26, 0, 32 * 32,
              tileBuild(35 * (!savefile->settings.lightMode), false, false, 0));
     setTiles(27, 0, 32 * 32, tileBuild(34, false, false, 0));
+    // The match-end overlay uses priority 0; restore the menu background.
+    buildBG(3, 0, 27, 0, 1, true);
 
     for (int i = 0; i < MAX_WORD_SPRITES; i++)
         wordSprites[i] = new WordSprite(i, 64 + i * 3, 256 + i * 12);
@@ -96,9 +112,10 @@ void MultiplayerResultsScene::renderText() {
         visibleCount++;
     }
 
-    naprint("Play Again", resultsButtonRight - getVariableWidth("Play Again"),
+    const int right = resultsButtonRight();
+    naprint("Play Again", right - getVariableWidth("Play Again"),
             resultsButtonY * 8);
-    naprint("Main Menu", resultsButtonRight - getVariableWidth("Main Menu"),
+    naprint("Main Menu", right - getVariableWidth("Main Menu"),
             (resultsButtonY + 2) * 8);
 }
 
@@ -126,11 +143,10 @@ void MultiplayerResultsScene::update() {
 
         const char* selectedOption =
             selection == 0 ? "Play Again" : "Main Menu";
-        const int buttonX =
-            resultsButtonRight - getVariableWidth(selectedOption);
+        const int right = resultsButtonRight();
+        const int buttonX = right - getVariableWidth(selectedOption);
         const int buttonY = resultsButtonY + selection * 2;
-        const int x =
-            i ? resultsButtonRight + offset - 4 : buttonX - offset - 12;
+        const int x = i ? right + offset - 4 : buttonX - offset - 12;
 
         sprite_set_pos(cursorSprites[i], x, buttonY * 8 - 5);
     }
