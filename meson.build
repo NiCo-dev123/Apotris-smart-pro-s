@@ -890,7 +890,6 @@ else
     ##########################################
 
     # Check Wonderful Toolchain and Eden Toolchain
-    compiler = meson.get_compiler('c')
     cc_version_identifier = cc_ver.stdout().to_lower()
     have_eden = cc_version_identifier.contains('wonderful') or cc_version_identifier.contains('eden')
     # Check devkitARM
@@ -900,15 +899,12 @@ else
     link_args = []
     sync_none = ['-specs=sync-none.specs']
 
+    # MinRT supplies _fini; adding a local stub would define it twice.
     # Use correct toolchain .specs to start
-    if compiler.get_id().contains('gcc') and cc.version().version_compare('> 13')
-        sources += files('source/stubs.s')
-    endif
     if have_devkitarm # devkitARM
         link_args += sync_none
     elif not have_eden # e.g. generic arm.com
         link_args += ['-specs=nosys.specs']
-        sources += files('source/stubs.s')
     else # wf and eden
         link_args += sync_none
         link_args += ['-specs=picolibc.specs', '-lnosys']
