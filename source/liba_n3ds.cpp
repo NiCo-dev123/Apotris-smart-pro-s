@@ -270,6 +270,7 @@ TLN_Bitmap spriteBitmap;
 #endif
 
 static int link3dsSocket = -1;
+static bool sslcInitialized = false;
 
 static void checkSaveDir();
 
@@ -359,6 +360,8 @@ void platformInit() {
 
     // Init libs
     psInit();
+    // MbedTLS hardware entropy uses ssl:C.
+    sslcInitialized = R_SUCCEEDED(sslcInit(0));
     romfsInit();
     hidInit();
     gspInit();
@@ -466,6 +469,10 @@ void deinitialize() {
     gspExit();
     hidExit();
     romfsExit();
+    if (sslcInitialized) {
+        sslcExit();
+        sslcInitialized = false;
+    }
     psExit();
 
     if (link3dsSocket >= 0) {
@@ -1132,8 +1139,9 @@ uint32_t keys_raw() { return ApotrisN3ds::instance().input().keys_raw(); }
 
 void setUpPresentException(std::string error) {
     multiplayerLink->deactivate(true);
-    changeScene(
-        [&error]() { return new MultiplayerExceptionScene(std::move(error)); });
+    changeScene([error = std::move(error)]() mutable {
+        return new MultiplayerExceptionScene(std::move(error));
+    });
 }
 
 // ******************

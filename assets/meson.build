@@ -57,6 +57,8 @@ fs = import('fs')
 
 list = audio_files
 list += files('favicon32.bmp')
+# Ship a fallback CA with packaged assets; never overwrite a user's SD CA.
+list += files('ssl/cacert.pem')
 
 foreach file : list
     filename = fs.name(file)

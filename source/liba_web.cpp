@@ -453,6 +453,11 @@ void saveSavefile() {
 }
 
 void quit() {
+    static bool quitting = false;
+    if (quitting)
+        return;
+    quitting = true;
+    shutdownMultiplayer();
     freeAudio();
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);

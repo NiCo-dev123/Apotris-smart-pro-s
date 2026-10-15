@@ -56,7 +56,10 @@ bool NetworkingThread::start_thread() {
     }
 
     auto* inst = new (std::nothrow) NetworkingThread;
-    s_instance.store(inst, std::memory_order_release);
+    if (!inst) {
+        fprintf(stderr, "Failed to allocate networking thread\n");
+        return false;
+    }
 
     inst->in_run.store(true);
     LightEvent_Init(&inst->in_wakeup, RESET_ONESHOT);
@@ -73,9 +76,12 @@ bool NetworkingThread::start_thread() {
         threadCreate(net_thread_start, inst, 64 * 1024, priority, -1, false);
     if (!inst->m_thread) {
         fprintf(stderr, "Failed to start networking thread\n");
+        delete inst;
         return false;
     }
 
+    // Publish only a fully initialized, running worker.
+    s_instance.store(inst, std::memory_order_release);
     return true;
 }
 
@@ -95,15 +101,16 @@ void NetworkingThread::join_thread() {
 
 void NetworkingThread::process() {
     // This is called on the main thread.
-    auto* inst = s_instance.load(std::memory_order_relaxed);
-    assert(inst);
-    LightEvent_Signal(&inst->in_wakeup);
+    auto* inst = s_instance.load(std::memory_order_acquire);
+    if (inst)
+        LightEvent_Signal(&inst->in_wakeup);
 }
 
 void NetworkingThread::process_wait_completion() {
     // This is called on the main thread.
-    auto* inst = s_instance.load(std::memory_order_relaxed);
-    assert(inst);
+    auto* inst = s_instance.load(std::memory_order_acquire);
+    if (!inst)
+        return;
 
 #ifdef TRACY_ENABLE
     ZoneScoped;
@@ -148,7 +155,7 @@ void NetworkingThread::net_thread() {
 
 } // namespace
 
-void start() { NetworkingThread::start_thread(); }
+bool start() { return NetworkingThread::start_thread(); }
 
 void stop() { NetworkingThread::join_thread(); }
 

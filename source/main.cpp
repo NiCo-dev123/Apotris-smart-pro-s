@@ -229,7 +229,7 @@ int main(int argc, char* argv[]) {
         if (!exceptionReason.empty()) {
             const std::string localReason = exceptionReason;
             exceptionReason = "";
-#ifdef PC
+#if defined(TE) || defined(N3DS)
             setUpPresentException(localReason);
 #endif
         } else {
@@ -545,7 +545,7 @@ std::string nameInput(int place, bool* cancelled) {
 #else
             char curr = result.at(cursor);
 
-#if defined(PC)
+#if defined(PC) || defined(WEB)
             if (lastInputType == InputType::KEYBOARD)
                 goto keyboard;
 #endif

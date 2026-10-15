@@ -296,6 +296,7 @@ extern void setSpriteMaskRegion(int shift);
 
 extern void setScreenOffset(int x, int y);
 void setUpPresentException(std::string error);
+void shutdownMultiplayer();
 
 #define UNBOUND -2
 

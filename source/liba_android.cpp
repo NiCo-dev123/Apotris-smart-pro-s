@@ -1966,6 +1966,11 @@ void saveSavefile() {
 }
 
 void quit() {
+    static bool quitting = false;
+    if (quitting)
+        return;
+    quitting = true;
+    shutdownMultiplayer();
     if (imguiInited) {
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplSDLRenderer2_Shutdown();
