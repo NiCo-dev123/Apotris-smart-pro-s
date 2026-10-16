@@ -411,7 +411,8 @@ struct BgVertexVar {
     } flip;
 };
 
-constexpr size_t BG_LAYER_TILES_COUNT = BG_NUM_TILES_W * BG_NUM_TILES_H;
+// One wrapped column at x=-8 covers the half-pixel edge, the viewport crops it.
+constexpr size_t BG_LAYER_TILES_COUNT = (BG_NUM_TILES_W + 1) * BG_NUM_TILES_H;
 
 using CharKey = s32;
 constexpr CharKey CHARKEY_NULL = -1;
@@ -515,8 +516,8 @@ inline void BGRender::init_bg_vbo() {
     size_t vi = 0;
     for (size_t layer_idx = 0; layer_idx < tng::BG_LAYERS_COUNT; layer_idx++) {
         for (size_t j = 0; j < BG_NUM_TILES_H; j++) {
-            for (size_t i = 0; i < BG_NUM_TILES_W; i++) {
-                const s16 x = i * 8;
+            for (size_t i = 0; i <= BG_NUM_TILES_W; i++) {
+                const s16 x = (static_cast<int>(i) - 1) * 8;
                 const s16 y = j * 8;
                 m_vbo_data_const[vi] = {{x, y}};
                 vi += 1;
@@ -1449,7 +1450,7 @@ void cr::BGRender::prep_vbo() noexcept {
     ZoneScopedN("BGRender::prep_vbo");
 #endif
 
-    cr::BgVertexVar *vi_ptr = m_vbo_data_var.get();
+    cr::BgVertexVar* vi_ptr = m_vbo_data_var.get();
     for (size_t layer_idx = 0; layer_idx < tng::BG_LAYERS_COUNT; layer_idx++) {
 #ifdef TRACY_ENABLE
         ZoneScopedN("BGRender::prep_vbo layer");
@@ -1464,8 +1465,10 @@ void cr::BGRender::prep_vbo() noexcept {
 
         // Now we prepare the VBO
         for (size_t j = 0; j < cr::BG_NUM_TILES_H; j++) {
-            for (size_t i = 0; i < cr::BG_NUM_TILES_W; i++) {
-                const u16 se_val = screenblock[j * cr::BG_NUM_TILES_W + i];
+            for (size_t i = 0; i <= cr::BG_NUM_TILES_W; i++) {
+                const size_t column =
+                    (i + cr::BG_NUM_TILES_W - 1) % cr::BG_NUM_TILES_W;
+                const u16 se_val = screenblock[j * cr::BG_NUM_TILES_W + column];
                 const int char_tile_idx = se_val & 0x3ff;
                 const bool flip_h = se_val & 0x400;
                 const bool flip_v = se_val & 0x800;
