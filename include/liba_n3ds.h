@@ -282,10 +282,8 @@ INLINE void setSpritePixel(int index, u8 tx, u8 ty, u8 width, u8 x, u8 y,
                            u8 color) {
     tng::ImageTile* t = &tng::sprite_tile_images[index + ty * width + tx];
 
-    if (color)
-        t->rows[y] |= color << (x * 4);
-    else
-        t->rows[y] &= ~(0xf << (x * 4));
+    const u32 shift = x * 4;
+    t->rows[y] = (t->rows[y] & ~(0xfu << shift)) | ((color & 0xfu) << shift);
 
 #ifdef DEBUG_UI
     u8* dst = TLN_GetBitmapPtr(spriteBitmap, (tx + index) * 8 + x, ty * 8 + y);

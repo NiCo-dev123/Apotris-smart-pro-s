@@ -152,7 +152,24 @@ void platformInit() {
     multiplayerLink = new MultiplayerLink(linkUniversal);
 }
 
+void shutdownMultiplayer() {
+    // Flush BYE before closing RTC.
+    if (multiplayerLink && multiplayerLink->active)
+        multiplayerLink->deactivate(true);
+    else if (linkUniversal)
+        linkUniversal->deactivate();
+    delete multiplayerLink;
+    multiplayerLink = nullptr;
+    delete linkUniversal;
+    linkUniversal = nullptr;
+#if !defined(WEB) && !defined(SWITCH)
+    if (rtc::Cleanup().wait_for(std::chrono::seconds(10)) == std::future_status::timeout)
+        fprintf(stderr, "RTC cleanup timed out\n");
+#endif
+}
+
 void deinitialize() {
+    shutdownMultiplayer();
     TLN_Deinit();
 
     for (int i = 1; i < 4; i++)
@@ -942,8 +959,9 @@ void setScreenOffset(int x, int y) {
 
 void setUpPresentException(std::string error) {
     multiplayerLink->deactivate(true);
-    changeScene(
-        [&error]() { return new MultiplayerExceptionScene(std::move(error)); });
+    changeScene([error = std::move(error)]() mutable {
+        return new MultiplayerExceptionScene(std::move(error));
+    });
 }
 
 #endif

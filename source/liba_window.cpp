@@ -663,6 +663,12 @@ void saveSavefile() {
 }
 
 void quit() {
+    static bool quitting = false;
+    if (quitting)
+        return;
+    quitting = true;
+    // SDL_QUIT bypasses main()'s cleanup.
+    shutdownMultiplayer();
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

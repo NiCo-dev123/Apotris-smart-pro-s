@@ -1,7 +1,10 @@
 #pragma once
 #include "def.h"
+#include "multiplayerTransport.hpp"
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <cstdio>
 #include <optional>
 #include <queue>
 #include <random>
@@ -16,7 +19,6 @@
 
 #ifndef SWITCH
 #include "rtc/rtc.hpp"
-#include <future>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #endif
@@ -91,17 +93,33 @@ class LinkUniversal {
     std::unordered_map<std::string, std::string> playerStringToName;
 
     std::mutex readQueueLock;
-    std::shared_mutex multiplayerLock;
+    mutable std::shared_mutex multiplayerLock;
 
-#ifdef N3DS
-    std::mutex deferredSendQueueLock;
-    std::queue<rtc::message_variant> deferredSendQueue;
-#endif
+    using Events = multiplayerTransport::SessionEvents<LinkUniversal>;
+    std::shared_ptr<Events> events = std::make_shared<Events>();
+    uint64_t session = 0;
+    bool signalingReady = false;
+    std::chrono::steady_clock::time_point signalingDeadline;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point>
+        peerDeadlines;
+    std::unordered_map<std::string, multiplayerTransport::PendingMessages<
+                                        rtc::message_variant>>
+        outgoing;
+
+    void connectionFailed(const std::string& reason) {
+        if (!active)
+            return;
+        deactivate();
+        exceptionReason = reason;
+    }
 
 public:
     std::string localId;
     std::string localPlayerName;
-    [[nodiscard]] u8 currentPlayerId() const { return playerId; }
+    ~LinkUniversal() { deactivate(); }
+    [[nodiscard]] u8 currentPlayerId() const {
+        return playerId < 0 ? 0 : playerId;
+    }
     static std::string randomId(size_t length) {
         static const std::string characters("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
         std::string id(length, '0');
@@ -139,13 +157,18 @@ public:
         localPlayerName = savefile->latestName;
 
 #ifndef WEB
-        rtc::InitLogger(rtc::LogLevel::Debug);
+        rtc::InitLogger(rtc::LogLevel::Warning);
 #endif
         config.iceServers.clear();
         config.iceServers.emplace_back(STUN_SERVER);
 #ifdef N3DS
+        const char* caPath = "sdmc:/config/ssl/cacert.pem";
+        if (FILE* ca = fopen(caPath, "rb"))
+            fclose(ca);
+        else
+            caPath = "sdmc:/3ds/Apotris/assets/cacert.pem";
         ws = std::make_shared<rtc::WebSocket>(rtc::WebSocketConfiguration{
-            .caCertificatePemFile = "sdmc:/config/ssl/cacert.pem",
+            .caCertificatePemFile = caPath,
         });
 #elif defined(ANDROID)
         std::string certPath;
@@ -176,21 +199,29 @@ public:
         ws = std::make_shared<rtc::WebSocket>();
 #endif
 
-        ws->onClosed([]() { std::cout << "WebSocket closed" << std::endl; });
-        ws->onMessage([this, wws = make_weak_ptr(ws)](auto data) {
+        ws->onClosed([mailbox = events, epoch = session]() {
+            mailbox->post(epoch, [](LinkUniversal& self) {
+                self.connectionFailed("Signaling connection closed");
+            });
+        });
+        ws->onMessage([mailbox = events, epoch = session](auto data) {
+            mailbox->post(epoch, [data = std::move(data)](LinkUniversal& self) {
+                self.handleSignalingMessage(data);
+            });
+        });
+    }
+
+    void handleSignalingMessage(const rtc::message_variant& data) {
+        try {
             if (!std::holds_alternative<std::string>(data))
                 return;
             json message = json::parse(std::get<std::string>(data));
-            if (message.find(ID) == message.end() ||
-                message.find(TYPE) == message.end())
+            if (!message.contains(ID) || !message[ID].is_string() ||
+                !message.contains(TYPE) || !message[TYPE].is_string())
                 return;
 
             std::string type = message[TYPE];
-            if (type != TURN_CREDENTIALS)
-                std::cout << "Got websocket message: "
-                          << std::get<std::string>(data) << std::endl;
-            std::string id =
-                message[ID]; // The value from the "id" field of the JSON
+            std::string id = message[ID];
             if (type == TURN_CREDENTIALS) {
                 if (message.contains(FROM) || id != localId ||
                     !message.contains("username") ||
@@ -205,13 +236,9 @@ public:
                                                    password);
                 return;
             }
-            std::string peerId = id; // This will be the peer ID for RTC
-                                     // operations. Default to
-                                     // id_field_in_message.
+            std::string peerId = id;
 
-            // For OFFER, ANSWER, CANDIDATE, the message[ID] is localId
-            // (recipient). The actual remote peer's ID is in the "from" field
-            // added by the server.
+            // SDP/candidates use id for the recipient and from for the sender.
             if (type == OFFER || type == ANSWER || type == CANDIDATE) {
                 if (!message.contains(FROM)) {
                     std::cerr << "WebSocket " << type
@@ -220,8 +247,7 @@ public:
                     return;
                 }
                 peerId = message[FROM].get<std::string>();
-                if (peerId ==
-                    localId) { // Should be caught by server or is an error
+                if (peerId == localId) {
                     std::cerr << "WebSocket " << type
                               << " message 'from' self (" << peerId
                               << "). Discarding." << std::endl;
@@ -230,6 +256,10 @@ public:
             }
 
             if (type == PLAYER_INFO) {
+                // Join replay may arrive before the peer broadcasts its name.
+                if (!message.contains(FROM) || !message[FROM].is_string() ||
+                    !message.contains(NAME) || !message[NAME].is_string())
+                    return;
                 const std::string playerString = message[FROM];
                 const std::string playerName = message[NAME];
                 playerStringToName[playerString] = playerName;
@@ -247,6 +277,9 @@ public:
             if (type == MATCH) {
                 int iter = message[ITER];
                 int remotePlayerId = iter;
+                if (remotePlayerId < 0 ||
+                    remotePlayerId >= LINK_UNIVERSAL_MAX_PLAYERS)
+                    return;
                 if (peerId == localId) {
                     if (playerId != -1 && remotePlayerId == 0) {
                         playerIdToString.clear();
@@ -256,8 +289,6 @@ public:
                     playerId = remotePlayerId;
 
                     playerIdToName[playerId] = localPlayerName;
-                    std::cout << "We think we are player ID " << playerId
-                              << std::endl;
                 }
                 playerIdToString[remotePlayerId] = peerId;
                 playerStringToId[peerId] = remotePlayerId;
@@ -266,8 +297,11 @@ public:
                     playerIdToName[remotePlayerId] = name->second;
                 }
                 clearPlayers();
-                for (auto& i : playerIdToString) {
-                    initPlayer(i.first);
+                for (const auto& [id, peer] : playerIdToString) {
+                    auto channel = dataChannelMap.find(peer);
+                    if (peer == localId || (channel != dataChannelMap.end() &&
+                                            channel->second->isOpen()))
+                        initPlayer(id);
                 }
                 if (peerId == localId)
                     return;
@@ -276,11 +310,12 @@ public:
             auto pc = getOrCreatePeerConnection(peerId, type);
 
             if (type == CLOSE) {
-                // Close the DataChannel without holding multiplayerLock to
-                // avoid deadlock
+                // Close outside the lock: RTC may invoke callbacks.
                 auto dc = [&]() -> std::shared_ptr<rtc::DataChannel> {
                     std::unique_lock<std::shared_mutex> guard{multiplayerLock};
                     peerConnectionMap.erase(peerId);
+                    peerDeadlines.erase(peerId);
+                    outgoing.erase(peerId);
                     if (auto it = dataChannelMap.find(peerId);
                         it != dataChannelMap.end()) {
                         auto dc = std::move(it->second);
@@ -304,6 +339,9 @@ public:
                     playerIdToName.erase(pId_to_remove);
                 }
                 playerStringToName.erase(peerId);
+                std::lock_guard<std::mutex> guard(readQueueLock);
+                readQueues.erase(peerId);
+                incomingBoardUpdates = {};
 
             } else if (type == MATCH && peerId != localId) {
                 std::shared_lock<std::shared_mutex> guard{multiplayerLock};
@@ -322,92 +360,74 @@ public:
                 pc->addRemoteCandidate(
                     rtc::Candidate(message[CANDIDATE], message[MID]));
             } else if (type == FULL)
-                exceptionReason = "Room is full";
-        });
+                connectionFailed("Room is full");
+        } catch (const std::exception& error) {
+            std::cerr << "Ignoring invalid signaling message: " << error.what()
+                      << std::endl;
+        }
     }
     void activate() {
         if (active)
             return;
+        session = events->reset();
         active = true;
+        signalingReady = false;
+        signalingDeadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(20);
 #ifdef N3DS
+        if (!n3ds::networking::start()) {
+            connectionFailed("Unable to start networking thread");
+            return;
+        }
         NDMU_EnterExclusiveState(NDM_EXCLUSIVE_STATE_INFRASTRUCTURE);
         aptSetHomeAllowed(false);
         aptSetSleepAllowed(false);
-        n3ds::networking::start();
 #endif
-        initWebSocketConfig();
+        try {
+            initWebSocketConfig();
+            ws->onOpen([mailbox = events, epoch = session]() {
+                mailbox->post(epoch, [](LinkUniversal& self) {
+                    self.signalingReady = true;
+                    json info = {{ID, "broadcast"},
+                                 {TYPE, PLAYER_INFO},
+                                 {NAME, self.localPlayerName}};
+                    self.ws->send(info.dump());
+                });
+            });
+            ws->onError(
+                [mailbox = events, epoch = session](const std::string& error) {
+                    mailbox->post(epoch, [error](LinkUniversal& self) {
+                        self.connectionFailed(std::string("Signaling error: ") +
+                                              error);
+                    });
+                });
 
-#if !defined(WEB) && !defined(ANDROID)
-        std::promise<void> wsPromise;
-        auto wsFuture = wsPromise.get_future();
+            std::string url = "wss://api.apotris.com/ws/" + localId +
+                              (!roomId.empty() ? "/" + roomId : "/match") +
+                              "?turn=1";
+            url.erase(remove(url.begin(), url.end(), ' '), url.end());
 
-        ws->onOpen([this, wws = make_weak_ptr(ws), &wsPromise]() {
-            std::cout << "WebSocket connected, signaling ready" << std::endl;
-            wsPromise.set_value();
-            if (auto shared_ws = wws.lock()) {
-                json playerInfo = {{ID, "broadcast"},
-                                   {TYPE, PLAYER_INFO},
-                                   {NAME, localPlayerName}};
-                shared_ws->send(playerInfo.dump());
-                std::cout << "Sent player info to signaling server: "
-                          << playerInfo.dump() << std::endl;
-            }
-        });
+            ws->open(url);
 
-        ws->onError([&wsPromise](const std::string& s) {
-            std::cout << "WebSocket error" << std::endl;
-            wsPromise.set_exception(
-                std::make_exception_ptr(std::runtime_error(s)));
-        });
-#else
-        ws->onOpen([this, wws = make_weak_ptr(ws)]() {
-            std::cout << "WebSocket connected, signaling ready" << std::endl;
-            if (auto shared_ws = wws.lock()) {
-                json playerInfo = {{ID, "broadcast"},
-                                   {TYPE, PLAYER_INFO},
-                                   {NAME, localPlayerName}};
-                shared_ws->send(playerInfo.dump());
-                std::cout << "Sent player info to signaling server: "
-                          << playerInfo.dump() << std::endl;
-            }
-        });
-
-        ws->onError([](const std::string& s) {
-            std::cout << "WebSocket error" << std::endl;
-        });
-#endif
-
-        std::string url = "wss://api.apotris.com/ws/" + localId +
-                          (!roomId.empty() ? "/" + roomId : "/match") +
-                          "?turn=1";
-        url.erase(remove(url.begin(), url.end(), ' '), url.end());
-
-        std::cout << "WebSocket URL is " << url << std::endl;
-        ws->open(url);
-
-#if !defined(WEB) && !defined(ANDROID)
-        std::cout << "Waiting for signaling to be connected..." << std::endl;
-        wsFuture.get();
-#endif
+        } catch (const std::exception& error) {
+            connectionFailed(std::string("Connection failed: ") + error.what());
+        }
     }
 
     void makeOffer(std::shared_ptr<rtc::PeerConnection> pc,
                    const std::string& remoteId) {
-        // We are the offerer if we have a lower ID
+        // The higher ID creates the offer.
         if (localId < remoteId) {
             return;
         }
         std::stringstream ss;
         ss << "apotris:" << localId << std::to_string(playerId) << "<->"
            << std::to_string(playerStringToId[remoteId]);
-        std::cout << "Creating DataChannel with label \"" << ss.str() << "\""
-                  << std::endl;
         auto dc = pc->createDataChannel(ss.str());
         registerDataChannelHandlers(dc, remoteId);
     }
 
     void parseMessage(rtc::message_variant data, const std::string& peerId) {
-        // data holds either std::string or rtc::binary
         if (std::holds_alternative<std::string>(data)) {
             return;
         } else {
@@ -424,7 +444,10 @@ public:
                 ZoneTextF("0x%04x", real);
                 ZoneTextF("%s", stringifyMultiplayerPacket(real).c_str());
 #endif
-                int realRemoteId = playerStringToId[peerId];
+                auto remote = playerStringToId.find(peerId);
+                if (remote == playerStringToId.end())
+                    return;
+                int realRemoteId = remote->second;
                 std::lock_guard<std::mutex> guard{readQueueLock};
                 readQueues[peerId].emplace((u8)(realRemoteId), real);
             } else if (packet.size() == 104 &&
@@ -434,7 +457,10 @@ public:
                 ZoneScopedN("recv_packet(board)");
                 ZoneTextF("from=%s", peerId.c_str());
 #endif
-                int realRemoteId = playerStringToId[peerId];
+                auto remote = playerStringToId.find(peerId);
+                if (remote == playerStringToId.end())
+                    return;
+                int realRemoteId = remote->second;
                 const u16 seq = (u16)packet[2] | ((u16)packet[3] << 8);
 
 #ifdef TRACY_ENABLE
@@ -453,17 +479,6 @@ public:
                         boardUpdate.board[r][col * 2 + 1] = (packed >> 4) & 0xF;
                     }
                 }
-            } else {
-                fprintf(stderr, "Received unknown message of len=%d",
-                        packet.size());
-                for (size_t i = 0; i < packet.size(); i++) {
-                    fprintf(stderr, "%02X ",
-                            *((unsigned char*)packet.data() + i));
-                    if (i % 16 == 15 && i + 1 != packet.size()) {
-                        fputs("\n", stderr);
-                    }
-                }
-                fputs("\n", stderr);
             }
         }
     }
@@ -471,28 +486,66 @@ public:
     void
     registerDataChannelHandlers(const shared_ptr<rtc::DataChannel>& dataChannel,
                                 const std::string& peerId) {
-        dataChannel->onOpen([this, peerId]() {
-            std::cout << "DataChannel from " << peerId << " opened"
-                      << std::endl;
-            initPlayer(playerStringToId[peerId]);
+        {
+            std::unique_lock<std::shared_mutex> guard(multiplayerLock);
+            if (!dataChannelMap.emplace(peerId, dataChannel).second) {
+                guard.unlock();
+                dataChannel->close();
+                return;
+            }
+            outgoing.try_emplace(peerId);
+        }
+        // Reject callbacks from canceled sessions or replaced channels.
+        auto post = [mailbox = events, epoch = session, peerId,
+                     weakChannel = make_weak_ptr(dataChannel)](
+                        std::function<void(LinkUniversal&)> action) {
+            mailbox->post(epoch,
+                          [peerId, weakChannel,
+                           action = std::move(action)](LinkUniversal& self) {
+                              auto channel = self.dataChannelMap.find(peerId);
+                              if (channel != self.dataChannelMap.end() &&
+                                  channel->second == weakChannel.lock())
+                                  action(self);
+                          });
+        };
+        dataChannel->onOpen([post, peerId]() {
+            post([peerId](LinkUniversal& self) {
+                if (auto player = self.playerStringToId.find(peerId);
+                    player != self.playerStringToId.end())
+                    initPlayer(player->second);
+#ifdef N3DS
+                n3ds::networking::process();
+#endif
+            });
         });
 
-        dataChannel->onClosed([this, peerId]() {
-            std::cout << "DataChannel from " << peerId << " closed"
-                      << std::endl;
+        dataChannel->onClosed([post, peerId]() {
+            post([peerId](LinkUniversal& self) {
+                {
+                    std::unique_lock<std::shared_mutex> guard(
+                        self.multiplayerLock);
+                    self.outgoing.erase(peerId);
+                }
+                if (auto player = self.playerStringToId.find(peerId);
+                    player != self.playerStringToId.end())
+                    removePlayer(player->second);
+                std::lock_guard<std::mutex> guard(self.readQueueLock);
+                self.readQueues.erase(peerId);
+            });
         });
 
-        dataChannel->onMessage(
-            [this, peerId](auto data) { parseMessage(data, peerId); });
-
-        dataChannel->onError([peerId](auto error) {
-            std::cout << "Error on DataChannel to peer " << peerId
-                      << ", was error:\n"
-                      << error << std::endl;
+        dataChannel->onMessage([post, peerId](auto data) {
+            post([peerId, data = std::move(data)](LinkUniversal& self) {
+                self.parseMessage(data, peerId);
+            });
         });
 
-        std::unique_lock<std::shared_mutex> guard{multiplayerLock};
-        dataChannelMap.emplace(peerId, dataChannel);
+        dataChannel->onError([post, peerId](auto error) {
+            post([peerId, reason = std::string(error)](LinkUniversal& self) {
+                self.connectionFailed("Data channel error for " + peerId +
+                                      ": " + reason);
+            });
+        });
     }
 
     shared_ptr<rtc::PeerConnection>
@@ -501,14 +554,18 @@ public:
         auto pc = std::make_shared<rtc::PeerConnection>(config);
 
 #ifndef WEB
-        pc->onStateChange([](rtc::PeerConnection::State state) {
-            std::cout << "State: " << state << std::endl;
+        pc->onStateChange([mailbox = events, epoch = session, peerId,
+                           weakPeer = make_weak_ptr(pc)](
+                              rtc::PeerConnection::State state) {
+            if (state == rtc::PeerConnection::State::Failed)
+                mailbox->post(epoch, [peerId, weakPeer](LinkUniversal& self) {
+                    auto peer = self.peerConnectionMap.find(peerId);
+                    if (peer != self.peerConnectionMap.end() &&
+                        peer->second == weakPeer.lock())
+                        self.connectionFailed("Peer connection failed");
+                });
         });
 
-        pc->onGatheringStateChange(
-            [](rtc::PeerConnection::GatheringState state) {
-                std::cout << "Gathering State: " << state << std::endl;
-            });
 #endif
 
         pc->onLocalDescription(
@@ -516,8 +573,6 @@ public:
                 json message = {{ID, peerId},
                                 {TYPE, description.typeString()},
                                 {DESCRIPTION, std::string(description)}};
-                std::cout << "Websocket local description "
-                          << to_string(message) << std::endl;
                 if (auto wwss = wws.lock())
                     wwss->send(message.dump());
             });
@@ -527,22 +582,28 @@ public:
                             {TYPE, "candidate"},
                             {CANDIDATE, std::string(candidate)},
                             {MID, candidate.mid()}};
-            std::cout << "Websocket local candidate " << to_string(message)
-                      << std::endl;
             if (auto wwss = wws.lock())
                 wwss->send(message.dump());
         });
 
-        pc->onDataChannel(
-            [this, peerId](const shared_ptr<rtc::DataChannel>& dataChannel) {
-                std::cout << "DataChannel from " << peerId
-                          << " received with label \"" << dataChannel->label()
-                          << "\"" << std::endl;
-                registerDataChannelHandlers(dataChannel, peerId);
-            });
+        pc->onDataChannel([mailbox = events, epoch = session, peerId,
+                           weakPeer = make_weak_ptr(pc)](
+                              const shared_ptr<rtc::DataChannel>& dataChannel) {
+            mailbox->post(
+                epoch, [peerId, weakPeer, dataChannel](LinkUniversal& self) {
+                    auto peer = self.peerConnectionMap.find(peerId);
+                    if (peer == self.peerConnectionMap.end() ||
+                        peer->second != weakPeer.lock())
+                        return;
+                    self.registerDataChannelHandlers(dataChannel, peerId);
+                });
+        });
 
         std::unique_lock<std::shared_mutex> guard{multiplayerLock};
         peerConnectionMap.emplace(peerId, pc);
+        peerDeadlines[peerId] =
+            std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        outgoing.try_emplace(peerId);
         return pc;
     };
     [[nodiscard]] bool isActive() const { return active; }
@@ -550,10 +611,15 @@ public:
     void deactivate() {
         if (!active)
             return;
-        active = false;
         send(2 << 13); // BYE
 #ifdef N3DS
         n3ds::networking::process_wait_completion();
+        n3ds::networking::stop();
+#endif
+        active = false;
+        signalingReady = false;
+        events->reset();
+#ifdef N3DS
         aptSetHomeAllowed(true);
         aptSetSleepAllowed(true);
         NDMU_LeaveExclusiveState();
@@ -561,8 +627,13 @@ public:
 
         auto [pcs, dcs] = [&]() {
             std::unique_lock<std::shared_mutex> guard{multiplayerLock};
-            return std::pair{std::move(peerConnectionMap),
-                             std::move(dataChannelMap)};
+            outgoing.clear();
+            peerDeadlines.clear();
+            auto peerConnections = std::move(peerConnectionMap);
+            auto channels = std::move(dataChannelMap);
+            peerConnectionMap.clear();
+            dataChannelMap.clear();
+            return std::pair{std::move(peerConnections), std::move(channels)};
         }();
         dcs.clear();
 #ifndef WEB
@@ -570,31 +641,74 @@ public:
             it.second->close();
 #endif
         pcs.clear();
-        readQueues.clear();
+        {
+            std::lock_guard<std::mutex> guard(readQueueLock);
+            readQueues.clear();
+            incomingBoardUpdates = {};
+        }
         playerStringToId.clear();
         playerIdToString.clear();
         playerIdToName.clear();
         playerStringToName.clear();
-        ws->close();
+        if (ws) {
+            ws->close();
+            ws.reset();
+        }
         localId = randomId(10);
         playerId = -1;
     }
 
-    [[nodiscard]] bool sync() const { return isConnected(); }
+    bool sync() {
+        try {
+            events->drain(*this);
+        } catch (const std::exception& error) {
+            connectionFailed(std::string("Networking error: ") + error.what());
+        }
+        if (active && !signalingReady &&
+            std::chrono::steady_clock::now() >= signalingDeadline)
+            connectionFailed("Signaling connection timed out");
+        // Bound ICE/DTLS negotiation even while signaling is healthy.
+        bool peerTimedOut = false;
+        for (auto it = peerDeadlines.begin(); it != peerDeadlines.end();) {
+            auto channel = dataChannelMap.find(it->first);
+            if (channel != dataChannelMap.end() && channel->second->isOpen()) {
+                it = peerDeadlines.erase(it);
+            } else if (std::chrono::steady_clock::now() >= it->second) {
+                peerTimedOut = true;
+                break;
+            } else {
+                ++it;
+            }
+        }
+        if (peerTimedOut)
+            connectionFailed("Peer connection timed out");
+#ifndef N3DS
+        sendDeferredMessages();
+#endif
+        return isConnected();
+    }
 
     bool canRead(u8 pId) {
         if (pId == playerId)
             return false;
-        std::string peerId = playerIdToString[pId];
+        auto peer = playerIdToString.find(pId);
+        if (peer == playerIdToString.end())
+            return false;
         std::lock_guard<std::mutex> guard{readQueueLock};
-        return !readQueues[peerId].empty();
+        auto queue = readQueues.find(peer->second);
+        return queue != readQueues.end() && !queue->second.empty();
     }
 
     u16 read(u8 pId) {
-        std::string realRemoteId = playerIdToString[pId];
+        auto peer = playerIdToString.find(pId);
+        if (peer == playerIdToString.end())
+            return 0;
         std::lock_guard<std::mutex> guard{readQueueLock};
-        auto front = readQueues[realRemoteId].front();
-        readQueues[realRemoteId].pop();
+        auto queue = readQueues.find(peer->second);
+        if (queue == readQueues.end() || queue->second.empty())
+            return 0;
+        auto front = queue->second.front();
+        queue->second.pop();
         return front.packet;
     }
 
@@ -624,193 +738,112 @@ public:
         return send(packet.data(), packet.size());
     }
     bool send(const std::byte* data, size_t len) {
-#ifdef TRACY_ENABLE
-        ZoneScopedN("link->send(data, len)");
-        ZoneTextF("len=%zu", len);
-#endif
-#ifdef N3DS
-        {
-            std::lock_guard<std::mutex> guard{deferredSendQueueLock};
-            deferredSendQueue.emplace(rtc::binary{data, data + len});
-        }
-        n3ds::networking::process();
-        return true;
-#else /* N3DS */
-        try {
-            for (auto& it : dataChannelMap) {
-#ifdef TRACY_ENABLE
-                ZoneScopedN("send_to_datachannel");
-                ZoneTextF("peer=%s", it.first.c_str());
-#endif
-                if (!it.second->isOpen()) {
-                    std::cout << "DataChannel to " << it.first
-                              << " appears closed!" << std::endl;
-                    if (it.second->isClosed()) {
-#ifdef TRACY_ENABLE
-                        ZoneTextF("DataChannel closed");
-                        ZoneColor(tracy::Color::Red);
-#endif
-                    } else {
-#ifdef TRACY_ENABLE
-                        ZoneTextF("DataChannel not open");
-                        ZoneColor(tracy::Color::Orange);
-#endif
-                    }
-                    return false;
-                }
-                if (!it.second->send(data, len)) {
-#ifdef TRACY_ENABLE
-                    ZoneTextF("send returned false");
-                    ZoneColor(tracy::Color::Orange);
-#endif
-                    // The return value of `send` seems unusable. `false` may
-                    // mean the message wasn't sent due to the DataChannel being
-                    // closed, but it could also mean the message has been
-                    // buffered... Anyway, we should not return false here.
-                }
-            }
-            return true;
-        } catch (std::exception& e) {
-#ifdef TRACY_ENABLE
-            ZoneTextF("send err: %s", e.what());
-            ZoneColor(tracy::Color::Red);
-#endif
-            printf("%s", e.what());
-            return true;
-        }
-#endif /* N3DS */
-    }
-    bool send(std::string msg) {
-#ifdef TRACY_ENABLE
-        ZoneScopedN("link->send(string)");
-        ZoneTextF("%s", msg.c_str());
-#endif
-#ifdef N3DS
-        {
-            std::lock_guard<std::mutex> guard{deferredSendQueueLock};
-            deferredSendQueue.emplace(std::move(msg));
-        }
-        n3ds::networking::process();
-        return true;
-#else /* N3DS */
-        try {
-            for (auto& it : dataChannelMap) {
-#ifdef TRACY_ENABLE
-                ZoneScopedN("send_to_datachannel");
-                ZoneTextF("peer=%s", it.first.c_str());
-#endif
-                if (!it.second->isOpen()) {
-                    std::cout << "DataChannel to " << it.first
-                              << " appears closed!" << std::endl;
-                    if (it.second->isClosed()) {
-#ifdef TRACY_ENABLE
-                        ZoneTextF("DataChannel closed");
-                        ZoneColor(tracy::Color::Red);
-#endif
-                    } else {
-#ifdef TRACY_ENABLE
-                        ZoneTextF("DataChannel not open");
-                        ZoneColor(tracy::Color::Orange);
-#endif
-                    }
-                    return false;
-                }
-                if (!it.second->send(msg)) {
-#ifdef TRACY_ENABLE
-                    ZoneTextF("send returned false");
-                    ZoneColor(tracy::Color::Orange);
-#endif
-                    // The return value of `send` seems unusable. `false` may
-                    // mean the message wasn't sent due to the DataChannel being
-                    // closed, but it could also mean the message has been
-                    // buffered... Anyway, we should not return false here.
-                }
-            }
-            return true;
-        } catch (std::exception& e) {
-#ifdef TRACY_ENABLE
-            ZoneTextF("send err: %s", e.what());
-            ZoneColor(tracy::Color::Red);
-#endif
-            printf("%s", e.what());
-            return true;
-        }
-#endif /* N3DS */
+        const bool board =
+            len == 104 && data[0] == std::byte{0} && data[1] == std::byte{0x1c};
+        return enqueueMessage(rtc::binary{data, data + len}, board);
     }
 
+    bool send(std::string msg) { return enqueueMessage(std::move(msg), false); }
+
+    // Do not retain obsolete seed/readiness broadcasts for negotiating peers.
+    bool sendState(u16 packet) {
+        return enqueueMessage(
+            rtc::binary{reinterpret_cast<const std::byte*>(&packet),
+                        reinterpret_cast<const std::byte*>(&packet) +
+                            sizeof(packet)},
+            false, true);
+    }
+
+    bool enqueueMessage(rtc::message_variant message, bool board,
+                        bool repeatedState = false) {
+        if (!active)
+            return false;
+        {
+            std::unique_lock<std::shared_mutex> guard(multiplayerLock);
+            if (outgoing.empty())
+                return false;
+            // Reject the entire broadcast before enqueueing to avoid
+            // duplicates.
+            if (!board && !repeatedState &&
+                std::any_of(outgoing.begin(), outgoing.end(),
+                            [](const auto& peer) {
+                                return peer.second.size() >=
+                                       decltype(outgoing)::mapped_type::limit;
+                            })) {
+                exceptionReason = "Multiplayer send queue exceeded safe limit";
+                return false;
+            }
+            for (auto& peer : outgoing) {
+                if (repeatedState) {
+                    auto channel = dataChannelMap.find(peer.first);
+                    if (channel == dataChannelMap.end() ||
+                        !channel->second->isOpen())
+                        continue;
+                }
+                peer.second.enqueue(message, board);
+            }
+        }
 #ifdef N3DS
-    // This is intended to be called from the 3DS networking thread.
+        n3ds::networking::process();
+#else
+        sendDeferredMessages();
+#endif
+        return true;
+    }
+
+    // Only the 3DS worker flushes here; other platforms use the game thread.
     void sendDeferredMessages() {
-        {
-            std::lock_guard<std::mutex> guard{deferredSendQueueLock};
-            if (deferredSendQueue.empty()) {
-                return;
-            }
-        }
-
-#ifdef TRACY_ENABLE
-        ZoneScoped;
-        ZoneTextF("count=%d", deferredSendQueue.size());
+        std::unique_lock<std::shared_mutex> guard(multiplayerLock);
+        for (auto& [id, pending] : outgoing) {
+            auto channel = dataChannelMap.find(id);
+            if (channel == dataChannelMap.end())
+                continue;
+            auto dc = channel->second;
+            try {
+                pending.flush(dc->isOpen(), [&dc](const auto& message) {
+#ifdef WEB
+                    // Browser false rejects; native false means buffered.
+                    if (!dc->send(message))
+                        throw std::runtime_error(
+                            "Browser data channel rejected send");
+#else
+                    dc->send(message);
 #endif
-
-        auto dataChannels = [&]() {
-            std::shared_lock<std::shared_mutex> guard{multiplayerLock};
-            return std::vector(dataChannelMap.begin(), dataChannelMap.end());
-        }();
-
-        auto tryPop = [&]() -> std::optional<rtc::message_variant> {
-            std::lock_guard<std::mutex> guard{deferredSendQueueLock};
-            if (deferredSendQueue.empty()) {
-                return std::nullopt;
-            }
-            rtc::message_variant msg = std::move(deferredSendQueue.front());
-            deferredSendQueue.pop();
-            return msg;
-        };
-
-        while (auto msg = tryPop()) {
-            for (auto& [id, dc] : dataChannels) {
-#ifdef TRACY_ENABLE
-                ZoneScopedN("send_to_datachannel");
-                ZoneTextF("peer=%s", id.c_str());
-#endif
-                if (!dc->isOpen()) {
-                    std::cout << "DataChannel to " << id << " appears closed!"
-                              << std::endl;
-                    if (dc->isClosed()) {
-#ifdef TRACY_ENABLE
-                        ZoneTextF("DataChannel closed");
-                        ZoneColor(tracy::Color::Red);
-#endif
-                    } else {
-#ifdef TRACY_ENABLE
-                        ZoneTextF("DataChannel not open");
-                        ZoneColor(tracy::Color::Orange);
-#endif
-                    }
-                    continue;
-                }
-                try {
-                    dc->send(*msg);
-                } catch (std::exception& e) {
-#ifdef TRACY_ENABLE
-                    ZoneTextF("send err: %s", e.what());
-                    ZoneColor(tracy::Color::Red);
-#endif
-                    fprintf(stderr, "Failed to send to %s, err=%s", id.c_str(),
-                            e.what());
-                }
+                });
+            } catch (const std::exception& error) {
+                events->post(session, [reason = std::string(error.what())](
+                                          LinkUniversal& self) {
+                    self.connectionFailed("Data channel send failed: " +
+                                          reason);
+                });
             }
         }
     }
-#endif /* N3DS */
 
     [[nodiscard]] bool isConnected() const { return playerCount() > 1; }
 
-    [[nodiscard]] u8 playerCount() const { return dataChannelMap.size() + 1; }
+    [[nodiscard]] u8 playerCount() const {
+        std::shared_lock<std::shared_mutex> guard(multiplayerLock);
+        return active ? 1 + std::count_if(dataChannelMap.begin(),
+                                          dataChannelMap.end(),
+                                          [](const auto& peer) {
+                                              return peer.second->isOpen();
+                                          })
+                      : 0;
+    }
 
     [[nodiscard]] std::unordered_map<u8, std::string> playerNames() const {
-        return playerIdToName;
+        std::unordered_map<u8, std::string> names;
+        for (const auto& [id, name] : playerIdToName) {
+            auto peer = playerIdToString.find(id);
+            if (peer == playerIdToString.end())
+                continue;
+            auto channel = dataChannelMap.find(peer->second);
+            if (peer->second == localId ||
+                (channel != dataChannelMap.end() && channel->second->isOpen()))
+                names.emplace(id, name);
+        }
+        return names;
     }
 #else
 public:
@@ -825,6 +858,7 @@ public:
     bool canRead(u8 pId) { return false; }
     u16 read(u8 pId) { return 0; }
     bool send(u16 packet) { return false; }
+    bool sendState(u16 packet) { return false; }
     bool send(std::string msg) { return false; }
     template <size_t N> bool send(const std::array<std::byte, N>& msg) {
         return false;

@@ -129,12 +129,16 @@ RemotePlayerId::RemotePlayerId(u8 playerId) {
 }
 
 void MultiplayerLink::activate() {
+    // Initialize before opening RTC: Deactivated::OnEnter closes transport.
+    if (!stateMachine.IsInitialized())
+        UpdateStateMachine();
     active = true;
     universal->activate();
 }
 
 bool MultiplayerLink::sync() {
-    // Do universal sync
+    // Drain callbacks before inspecting players.
+    universal->sync();
     UpdateStateMachine();
 
     // Beat state to other players
@@ -236,7 +240,11 @@ void MultiplayerLink::sendEvent(u16 packet) {
  * concerns.
  */
 void MultiplayerLink::broadcastState(u16 packet) const {
+#ifdef GBA
     universal->send(packet);
+#else
+    universal->sendState(packet);
+#endif
 }
 
 void MultiplayerLink::deactivate(bool sendBye) {

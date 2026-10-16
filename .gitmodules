@@ -32,6 +32,7 @@
 [submodule "subprojects/libjuice"]
 	path = subprojects/libjuice
 	url = https://gitea.com/ApotrisAdditional/libjuice.git
+	branch = master
 [submodule "subprojects/usrsctp"]
 	path = subprojects/usrsctp
     url = https://gitea.com/ApotrisAdditional/usrsctp.git
