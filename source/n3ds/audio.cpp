@@ -1045,7 +1045,7 @@ class NdspAudioThread {
         std::atomic<bool> in_start_song{};
         int in_start_song_arg_song_id{};
         bool in_start_song_arg_loop{};
-        bool in_should_pause{};
+        std::atomic<bool> in_should_pause{};
         bool in_process_requested{};
 
         std::atomic<float> in_music_playback_rate{1.0};
@@ -1680,6 +1680,9 @@ void NdspAudioThread::send_start_song(int song_id, bool loop) {
     }
     inst->m_state.in_start_song_arg_song_id = song_id;
     inst->m_state.in_start_song_arg_loop = loop;
+    // New tracks must not inherit the pause menu's state. Reset it before
+    // publishing the start request so a subsequent pause request still wins.
+    inst->m_state.in_should_pause.store(false, std::memory_order_release);
     inst->m_state.in_start_song.store(true, std::memory_order_release);
     inst->m_state.out_song_ended.store(false, std::memory_order_relaxed);
 }
@@ -1710,7 +1713,8 @@ void NdspAudioThread::send_pause_unpause(bool should_pause) {
     auto* inst = s_instance.load(std::memory_order_relaxed);
     assert(inst);
 
-    inst->m_state.in_should_pause = should_pause;
+    inst->m_state.in_should_pause.store(should_pause,
+                                        std::memory_order_release);
     LightEvent_Signal(&inst->m_state.in_event);
 }
 
@@ -1786,8 +1790,10 @@ void NdspAudioThread::audio_thread() {
             }
         }
 
-        if (m_state.in_should_pause != m_paused) {
-            m_paused = m_state.in_should_pause;
+        bool should_pause =
+            m_state.in_should_pause.load(std::memory_order_acquire);
+        if (should_pause != m_paused) {
+            m_paused = should_pause;
             if (!m_filling_all_buffers) {
                 ndspChnSetPaused(CH_NDSP_MUSIC, m_paused);
             }
