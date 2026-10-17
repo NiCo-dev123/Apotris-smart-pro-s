@@ -3405,9 +3405,9 @@ void enableBlend(int info) {
     }
 
     blendSprites = (top >> 4) & 0b1;
+#endif
 
     blendInfo = info;
-#endif
 }
 
 void setTiles(int tilemap, int index, int count, u32 value) {
