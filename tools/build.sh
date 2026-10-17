@@ -106,7 +106,8 @@ cp Apotris.cia 3ds/Apotris/ && \
 zip -r $n3ds.zip 3ds/Apotris && \
 cd ..
 
+cp tools/README_ANDROID.txt build-android/README.txt && \
 cd build-android && \
 cp -r ../license . && \
-zip $and Apotris.apk license/* && \
+zip $and README.txt Apotris.apk license/* && \
 cd ..

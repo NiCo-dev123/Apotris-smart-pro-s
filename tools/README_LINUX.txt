@@ -12,3 +12,12 @@ To install a .desktop entry (launcher) and icon system-wide:
 An AppImage is also available. Make it executable and run:
     chmod +x Apotris-*.AppImage
     ./Apotris-*.AppImage
+
+Customizing audio
+-----------------
+Close the game, then add or remove music directly in assets/ beside Apotris.
+Supported formats: .mod, .it, .xm, .s3m, .mp3, .ogg (Vorbis), .flac, .wav.
+Use lowercase extensions and prefix filenames with MENU_ for menus or GAME_ for gameplay.
+To replace a sound effect, replace its .wav file with one of the exact same name.
+Restart to load changes. Preview or disable songs in Settings > Audio > Track List.
+For editable assets, use this extracted release rather than the AppImage.

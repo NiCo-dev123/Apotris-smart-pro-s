@@ -8,6 +8,43 @@ Apotris is a block stacking game for the Gameboy Advance! It features satisfying
 
 Join the [discord server](https://discord.com/invite/jQnxmXS7tr) for updates, beta releases, or to give me feedback!
 
+## Audio customization
+
+### Supported music formats
+
+Tracker formats are `.mod`, `.it`, `.xm`, and `.s3m`. Use lowercase extensions.
+
+| Platform | Music formats |
+|----------|---------------|
+| Windows, Linux, macOS, Android, PortMaster, Switch, Web | Tracker formats, `.mp3`, `.ogg` (Vorbis), `.flac`, `.wav` |
+| Nintendo 3DS | Tracker formats, `.ogg` (Vorbis or Opus), `.opus`, `.mp3` |
+| GBA | Tracker formats only (maximum 8 channels; 32 MB ROM limit) |
+
+### Customizing audio
+
+Close the game, then edit the audio folder:
+
+- **Windows / Linux / PortMaster / Switch:** `assets/` beside the game. For Linux, use the extracted release rather than the AppImage.
+- **macOS:** `Apotris.app/Contents/Resources/assets/` (right-click the app > **Show Package Contents**).
+- **3DS:** `/3ds/Apotris/assets/` on the SD card.
+- **Android:** launch once to extract files to `Documents/Apotris/assets/`, or the storage folder reported by the game. Grant **All files access** if prompted.
+- **GBA:** `audio/` in the extracted release archive.
+
+Add songs directly to that folder, prefixing filenames with `MENU_` for menus or
+`GAME_` for gameplay (e.g. `GAME_my_song.mp3`). Remove unwanted music files, or
+disable tracks in **Settings > Audio > Track List**. To replace a sound effect,
+replace its `.wav` file while keeping the exact filename. Restart to load changes.
+
+**Android:** disable bundled tracks instead of deleting them, since missing files
+are restored. Back up replacements: updates/re-extraction may overwrite them.
+
+**GBA:** after editing, run `WINDOWS_build.bat` or `bash LINUX_or_MAC_build.sh`
+(requires Python 3 on Linux/macOS) from the release folder to rebuild `Apotris.gba`.
+See [the GBA release instructions](tools/README.txt) for hardware-specific patching.
+
+**Source / Web builds:** edit `assets/`, update music entries in
+`assets/meson.build`, and rebuild to package the changes.
+
 ## Docker build
 
 Want to bypass all the work and use a system shipped by the developers intended to build Apotris? Try the docker image:

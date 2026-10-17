@@ -72,9 +72,9 @@ jobs:
             cross_file: meson/android.ini
             build_flags: --reconfigure --buildtype=release
             package_name_suffix: Android
-            package_files: "Apotris.apk license/*"
+            package_files: "README.txt Apotris.apk license/*"
             exclude_package_files: ""
-            readme_src: ""
+            readme_src: tools/README_ANDROID.txt
             runs-on: ubuntu-latest
             container: akouzoukos/apotris:2026-4-30
           - target: web
@@ -222,6 +222,7 @@ jobs:
              zip "../$zip_name" ${{ matrix.package_files }} $exclude_arg
 
           elif [[ "${{ matrix.target }}" == "android" ]]; then
+             cp ../${{ matrix.readme_src }} ./README.txt
              # Android zip command
              zip "../$zip_name" ${{ matrix.package_files }}
 
