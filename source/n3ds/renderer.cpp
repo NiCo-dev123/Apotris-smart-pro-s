@@ -1722,7 +1722,9 @@ cr::BGMosaicRender::make_current_target(size_t layer,
     // Compute the projection matrix
     float proj_w = scaled_w * x_scale;
     float proj_h = scaled_h * y_scale;
-    constexpr float base_offset = -0.5f + 1.f / 32.f;
+    // Match the sprites' integer pixel origin. A half-pixel shift here leaves
+    // a one-pixel seam between background layers and adjacent sprites.
+    constexpr float base_offset = 1.f / 32.f;
     Mtx_Ortho(&projection, base_offset, proj_w + base_offset,
               proj_h + base_offset + cr::BG_MOSAIC_Y_OFFSET,
               base_offset + cr::BG_MOSAIC_Y_OFFSET, 0.0, 256.0, true);
