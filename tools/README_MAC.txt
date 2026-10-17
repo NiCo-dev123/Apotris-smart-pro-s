@@ -15,3 +15,8 @@ Customizing sound effects:
     Replace any of the sound effects in the previously mentioned folder with ones with the
     same file name.
 
+Music formats and playback:
+    Supported music formats: .mod, .it, .xm, .s3m, .mp3, .ogg (Vorbis), .flac, .wav.
+    Right-click Apotris.app > Show Package Contents to access the assets folder.
+    Close the game before editing and use lowercase extensions. Restart to load changes.
+    Preview or disable songs in Settings > Audio > Track List.

@@ -26,3 +26,9 @@ Patching for unique hardware:
     You will need to patch your 'Apotris.gba' (or 'audio/Apotris-base.gba' before running the script for custom music).
     In the 'patches' folder are .ups files named for each target. You can use any tool that supports UPS patch format.
     RomPatcherJS is a great option that works on both desktop and mobile: https://www.marcrobledo.com/RomPatcher.js/
+
+Building and selecting audio:
+    Use lowercase music file extensions.
+    Run the scripts from the extracted release folder; Linux/macOS require Python 3.
+    The scripts produce Apotris.gba. Base ROM for patching: tools/Apotris-base.gba.
+    Preview or disable songs in Settings > Audio > Track List.
