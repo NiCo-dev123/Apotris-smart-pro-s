@@ -1784,7 +1784,7 @@ void refreshWindowSize() {
         return;
 
     rowStart = (SCREEN_HEIGHT - (screenHeight / windowScale)) / 2;
-    rowEnd = (SCREEN_HEIGHT + (screenHeight / windowScale)) / 2;
+    rowEnd = std::ceil((SCREEN_HEIGHT + (screenHeight / windowScale)) / 2);
 
     if (rowStart < 0)
         rowStart = 0;
@@ -2099,7 +2099,7 @@ void handleAnalogInput(int axis, int value) {
 void setGameWindowScale() {
     windowScale = gameWindowScale;
     rowStart = (SCREEN_HEIGHT - (screenHeight / windowScale)) / 2;
-    rowEnd = (SCREEN_HEIGHT + (screenHeight / windowScale)) / 2;
+    rowEnd = std::ceil((SCREEN_HEIGHT + (screenHeight / windowScale)) / 2);
 
     if (rowStart < 0)
         rowStart = 0;
