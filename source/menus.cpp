@@ -1313,18 +1313,14 @@ int onRecord() {
             break;
         }
     } else if (game->gameMode == DEATH) {
-        int grade = (game->level / 100) - game->regretCount;
-
-        if (grade > 13)
-            grade = 13;
+        const s16 packedGrade = packDeathGrade(
+            (game->level / 100) - game->regretCount, game->level);
 
         EntryBoard& board = savefile->boards.death[subMode];
 
         for (int i = 0; i < 5; i++) {
-            if (grade < board.entries[i].grade ||
-                (grade == board.entries[i].grade &&
-                 (gameSeconds > board.entries[i].value &&
-                  board.entries[i].value != 0)))
+            if (!qualifiesDeathRecord(packedGrade, gameSeconds,
+                                      board.entries[i]))
                 continue;
 
             for (int j = 3; j >= i; j--)
@@ -1339,7 +1335,7 @@ int onRecord() {
                 savefile->latestName[j] = name.at(j);
 
             board.entries[i].value = gameSeconds;
-            board.entries[i].grade = grade;
+            board.entries[i].grade = packedGrade;
 
             strncpy(board.entries[i].name, name.c_str(), 9);
 

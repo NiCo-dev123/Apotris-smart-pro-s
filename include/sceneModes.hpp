@@ -12,6 +12,7 @@ public:
 
     bool onScore = false;
     bool onStart = false;
+    bool deathRecordTextActive = false;
     int movingScore = 0;
 
     int movingScoreTimer = 0;

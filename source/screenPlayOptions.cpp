@@ -475,6 +475,22 @@ void PlayOptionScene::draw() {
     }
 
     EntryBoard* board = getBoard(subMode, goal);
+    const bool deathBoard = getMode() == BlockEngine::DEATH;
+    const int deathTextStartX = 13 * 8;
+
+    if (deathBoard && onScore && board != nullptr) {
+        if (!deathRecordTextActive) {
+            resetSmallText();
+            clearText();
+            setSmallTextArea(110, deathTextStartX / 8, 0, 18, 19);
+            deathRecordTextActive = true;
+        }
+        clearSmallText();
+    } else if (deathRecordTextActive) {
+        resetSmallText();
+        clearTilemap(29);
+        deathRecordTextActive = false;
+    }
 
     if (!onScore) {
         int i = 0;       // drawing index, starts at listStart
@@ -558,15 +574,12 @@ void PlayOptionScene::draw() {
                 posprintf(buff, "%d. %.8s", i + 1, board->entries[i].name);
 
                 labels[i]->setText(buff);
-                labels[i]->show(startX, y, 15);
+                labels[i]->show(startX - (deathBoard ? 4 : 0), y, 15);
 
                 std::string str = "";
-                if (getIfGrade() && board->entries[i].value > 0) {
-                    if (name() == "Master") {
-                        str += GameInfo::masterGrades[board->entries[i].grade];
-                    } else if (name() == "Death") {
-                        str += GameInfo::deathGrades[board->entries[i].grade];
-                    }
+                if (getIfGrade() && !deathBoard &&
+                    board->entries[i].value > 0) {
+                    str += GameInfo::masterGrades[board->entries[i].grade];
                     str += " ";
                 }
 
@@ -575,15 +588,31 @@ void PlayOptionScene::draw() {
                 } else
                     str += timeToString(board->entries[i].value, false);
 
-                const int x = (endX) * 8 - getVariableWidth(str);
+                const int rightEdge = endX * 8 + (deathBoard ? 8 : 0);
+                const int x = rightEdge - getVariableWidth(str);
                 wordSprites[i]->setText(str);
                 wordSprites[i]->show(x, y, 15);
+
+                if (deathBoard && board->entries[i].value > 0) {
+                    const s16 packedGrade = board->entries[i].grade;
+                    std::string progress =
+                        GameInfo::deathGrades[getDeathGrade(packedGrade)];
+                    progress += " ";
+                    if (hasDeathLevel(packedGrade))
+                        progress +=
+                            std::to_string(getDeathRankingLevel(packedGrade));
+                    else
+                        progress += "?";
+                    progress += "L";
+                    const int progressX = x - 4 - 4 * (int)progress.size();
+                    aprints(progress, progressX - deathTextStartX, y + 2, 2);
+                }
 
                 if (board->entries[i].pro) {
                     sprite_unhide(proSprites[i], 0);
 
                     sprite_set_attr(proSprites[i], ShapeSquare, 0, 620, 15, 0);
-                    sprite_set_pos(proSprites[i], endX * 8 + 4, y);
+                    sprite_set_pos(proSprites[i], rightEdge + 4, y);
                 } else {
                     sprite_hide(proSprites[i]);
                 }
@@ -1548,6 +1577,7 @@ void PlayOptionScene::resetScoreboard() {
     vsync();
 
     resetSmallText();
+    deathRecordTextActive = false;
     clearText();
 
     clearSprites(128);
