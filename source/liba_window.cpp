@@ -1,6 +1,7 @@
 #ifdef PC
 
 #include "liba_window.h"
+#include <cmath>
 #include <cstdio>
 #include <dirent.h>
 #include <filesystem>
@@ -491,7 +492,7 @@ void refreshWindowSize() {
         return;
 
     rowStart = (SCREEN_HEIGHT - (screenHeight / windowScale)) / 2;
-    rowEnd = (SCREEN_HEIGHT + (screenHeight / windowScale)) / 2;
+    rowEnd = std::ceil((SCREEN_HEIGHT + (screenHeight / windowScale)) / 2);
 
     if (rowStart < 0)
         rowStart = 0;

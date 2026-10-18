@@ -1,6 +1,7 @@
 #ifdef SWITCH
 
 #include "liba_switch.h"
+#include <cmath>
 #include <fstream>
 #include <unordered_set>
 
@@ -274,7 +275,7 @@ void refreshWindowSize() {
         return;
 
     rowStart = (SCREEN_HEIGHT - (screenHeight / windowScale)) / 2;
-    rowEnd = (SCREEN_HEIGHT + (screenHeight / windowScale)) / 2;
+    rowEnd = std::ceil((SCREEN_HEIGHT + (screenHeight / windowScale)) / 2);
 
     if (rowStart < 0)
         rowStart = 0;
