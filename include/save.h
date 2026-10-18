@@ -1,6 +1,7 @@
 #pragma once
 #include "blockEngine.hpp"
 #include "platform.hpp"
+#include <algorithm>
 
 typedef struct Highscore {
     char name[9];
@@ -263,6 +264,41 @@ typedef struct SaveEntry {
     s16 grade;
     int value;
 } ALIGN(4) SaveEntry;
+
+constexpr s16 packDeathGrade(int grade, int level) {
+    return ((std::clamp(level, 0, 1300) + 1) << 4) | std::clamp(grade, 0, 13);
+}
+
+constexpr int getDeathGrade(s16 packedGrade) {
+    return packedGrade < 0 ? 0 : std::min(packedGrade & 0xf, 13);
+}
+
+constexpr bool hasDeathLevel(s16 packedGrade) { return packedGrade >= 16; }
+
+constexpr int getDeathRankingLevel(s16 packedGrade) {
+    if (!hasDeathLevel(packedGrade))
+        return getDeathGrade(packedGrade) * 100;
+
+    return std::min((packedGrade >> 4) - 1, 1300);
+}
+
+inline bool qualifiesDeathRecord(s16 packedGrade, int time,
+                                 const SaveEntry& previous) {
+    if (previous.value == 0)
+        return true;
+
+    const int grade = getDeathGrade(packedGrade);
+    const int previousGrade = getDeathGrade(previous.grade);
+    if (grade != previousGrade)
+        return grade > previousGrade;
+
+    const int level = getDeathRankingLevel(packedGrade);
+    const int previousLevel = getDeathRankingLevel(previous.grade);
+    if (level != previousLevel)
+        return level > previousLevel;
+
+    return time <= previous.value;
+}
 
 typedef struct EntryBoard {
     SaveEntry entries[5];
