@@ -230,10 +230,11 @@ public:
         return "[" + text + "]";
     }
 
-    void action(int dir) override {
+    bool action() override {
         savefile->settings.portraitOffset = !savefile->settings.portraitOffset;
         sfx(SFX_MENUCONFIRM);
         refreshWindowSize();
+        return false;
     }
 
     std::string getCurrentOption() override {
