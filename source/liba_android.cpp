@@ -1,8 +1,8 @@
 #ifdef ANDROID
 
 #include "liba_android.h"
-#include <SDL_system.h>
 #include <SDL_haptic.h>
+#include <SDL_system.h>
 #include <algorithm>
 #include <android/log.h>
 #include <cmath>
@@ -26,8 +26,8 @@
 
 #include "def.h"
 
-#include "scene.hpp"
 #include "rumblePatterns.hpp"
+#include "scene.hpp"
 
 #include "shader.h"
 
@@ -351,6 +351,10 @@ static void make_directory_recursive(const std::string& path) {
 
 bool scopedStorageError = false;
 
+static bool isAndroidAsset(const std::string& path) {
+    return !path.empty() && path.compare(0, 10, "multiboot/") != 0;
+}
+
 static bool assetsAreExtracted(const std::string& pathPrefix) {
     for (int i = 0; i < SFX_COUNT; i++) {
         if (access((pathPrefix + SoundEffectPaths[i]).c_str(), F_OK) != 0)
@@ -368,7 +372,7 @@ static bool assetsAreExtracted(const std::string& pathPrefix) {
     std::string line;
     while (std::getline(ss, line)) {
         line.erase(line.find_last_not_of(" \n\r\t") + 1);
-        if (line.empty())
+        if (!isAndroidAsset(line))
             continue;
 
         if (access((pathPrefix + "assets/" + line).c_str(), F_OK) != 0) {
@@ -511,7 +515,7 @@ void extractAssets(const std::string& pathPrefix) {
         std::string line;
         while (std::getline(ss, line)) {
             line.erase(line.find_last_not_of(" \n\r\t") + 1);
-            if (line.empty())
+            if (!isAndroidAsset(line))
                 continue;
 
             std::string srcPath = "assets/" + line;
@@ -1839,7 +1843,8 @@ void initRumble() {
     // this controller's haptic device, never the phone's vibrator.
     if (!controllerHapticInitialized) {
         if (SDL_InitSubSystem(SDL_INIT_HAPTIC) < 0) {
-            SDL_Log("Controller haptic initialization failed: %s", SDL_GetError());
+            SDL_Log("Controller haptic initialization failed: %s",
+                    SDL_GetError());
             return;
         }
         controllerHapticInitialized = true;
@@ -1857,12 +1862,14 @@ void initRumble() {
         return;
     }
     if (SDL_HapticRumbleInit(controllerHaptic) < 0) {
-        SDL_Log("Controller haptic rumble initialization failed: %s", SDL_GetError());
+        SDL_Log("Controller haptic rumble initialization failed: %s",
+                SDL_GetError());
         SDL_HapticClose(controllerHaptic);
         controllerHaptic = nullptr;
         return;
     }
-    SDL_Log("Controller haptic rumble ready: %s", SDL_GameControllerName(controller));
+    SDL_Log("Controller haptic rumble ready: %s",
+            SDL_GameControllerName(controller));
 }
 
 static void openController() {
@@ -2378,7 +2385,8 @@ void rumbleOutput(uint16_t strength) {
     }
 
     if (controllerHaptic) {
-        SDL_HapticRumblePlay(controllerHaptic, std::min(1.0f, strength / 8.0f), 64);
+        SDL_HapticRumblePlay(controllerHaptic, std::min(1.0f, strength / 8.0f),
+                             64);
     } else if (SDL_GameControllerHasRumble(controller)) {
         uint16_t sdl_strength = std::min(0xFFFF, strength * 0xFFFF / 8);
         SDL_GameControllerRumble(controller, sdl_strength, sdl_strength, 64);
