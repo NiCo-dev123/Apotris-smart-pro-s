@@ -13,6 +13,14 @@ bin/
 compile_commands.json
 apotris*.png
 
+# Local porting notes; deliberately not distributed with the game.
+TODO.md
+SPECS.md
+CLEANUP.md
+
+# Per-machine Spruce sysroot location used by the armhf cross build.
+meson/spruce-armhf.local.ini
+
 dkarm.ini
 # macOS metadata
 .DS_Store
