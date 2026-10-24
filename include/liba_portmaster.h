@@ -6,7 +6,6 @@
 #include "liba_pc.h"
 
 #include "SDL.h"
-#include "SDL_mixer.h"
 
 #include <map>
 

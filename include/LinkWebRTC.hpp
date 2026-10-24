@@ -17,7 +17,7 @@
 #include <SDL.h>
 #endif
 
-#ifndef SWITCH
+#if !defined(SWITCH) && !defined(APOTRIS_OFFLINE)
 #include "rtc/rtc.hpp"
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -41,7 +41,7 @@ extern void clearPlayers();
 extern void initPlayer(u8 pId);
 #endif
 
-#ifndef SWITCH
+#if !defined(SWITCH) && !defined(APOTRIS_OFFLINE)
 using nlohmann::json;
 using std::shared_ptr;
 using std::weak_ptr;
@@ -57,7 +57,7 @@ struct BoardUpdatePacket {
 };
 
 class LinkUniversal {
-#ifndef SWITCH
+#if !defined(SWITCH) && !defined(APOTRIS_OFFLINE)
     static constexpr char STUN_SERVER[] = "stun:stun.l.google.com:19302";
     static constexpr char TURN_SERVER[] = "api.apotris.com";
     static constexpr char TURN_CREDENTIALS[] = "turn";

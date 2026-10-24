@@ -17,6 +17,32 @@ project(
 # The name of your project.
 name = 'Apotris'
 
+# Spruce OS uses 32-bit time_t (GLIBC 2.28). Building with newer ARM headers
+# otherwise emits the time64 symbols introduced by later glibc. This must be
+# global and declared before subprojects so SDL2 and SoLoud inherit it.
+if get_option('portmaster')
+    add_global_arguments('-D_TIME_BITS=32', language: ['c', 'cpp'])
+
+    # A local cross-file may supply old glibc headers matching the runtime.
+    # GCC 13's target headers take precedence over ordinary -I paths, so the
+    # overlay can opt into a complete, ordered system-header list instead.
+    # This keeps glibc's internal headers from one release and prevents C23
+    # and time64 symbols unavailable on Spruce's GLIBC 2.28.
+    foreach language : ['c', 'cpp']
+        system_includes = meson.get_external_property(
+            'spruce_' + language + '_system_includes', [])
+        if system_includes.length() > 0
+            add_global_arguments('-nostdinc', language: language)
+            foreach system_include : system_includes
+                # Meson removes compiler-default -isystem paths.  They are
+                # still needed after -nostdinc for GCC built-ins and Linux
+                # UAPI headers, so keep the explicitly ordered paths as -I.
+                add_global_arguments('-I' + system_include, language: language)
+            endforeach
+        endif
+    endforeach
+endif
+
 # Define the platform-specific directories
 src_dir = 'source'
 inc_dir = 'include'
@@ -253,7 +279,11 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
     #############################
 
     json = dependency('nlohmann_json', fallback: ['nlohmann_json', 'nlohmann_json_dep'])
-    opus = dependency('opus', fallback: ['opus', 'opus_dep'])
+    opus = dependency(
+        'opus',
+        default_options: ['tests=disabled', 'extra-programs=disabled'],
+        fallback: ['opus', 'opus_dep'],
+    )
     ogg = dependency('ogg', fallback: ['ogg', 'libogg_dep'])
     if host_machine.system() == 'emscripten' or host_machine.system() == 'horizon'
         # Other required dependencies
@@ -272,19 +302,6 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
             default_options: ['default_library=static', 'test=false'],
             fallback: ['sdl2', 'sdl2_dep'],
         )
-        if host_machine.system() == 'horizon'
-            sdl_mixer = dependency(
-                'SDL2_mixer',
-                default_options: ['default_library=static'],
-                fallback: ['sdl2_mixer', 'sdl2_mixer_dep'],
-            )
-        else
-            sdl_mixer = dependency(
-                'SDL2_mixer',
-                default_options: ['default_library=static'],
-                fallback: ['sdl2_mixer', 'sdl2_mixer_dep'],
-            )
-        endif
         soloud = dependency(
             'SoLoud',
             default_options: ['default_library=static'],
@@ -317,12 +334,6 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
                     'test=false',
                 ],
             ).get_variable('sdl2_dep')
-            sdl_mixer = dependency(
-                'sdl2_mixer',
-                static: true,
-                default_options: ['default_library=static'],
-                fallback: ['sdl2_mixer', 'sdl2_mixer_dep'],
-            )
         else
             if not get_option('portmaster')
                 sdl2_dep = dependency(
@@ -331,30 +342,19 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
                     default_options: ['default_library=static', 'test=false'],
                     fallback: ['sdl2', 'sdl2_dep'],
                 )
-                sdl_mixer = dependency(
-                    'sdl2_mixer',
-                    static: true,
-                    default_options: ['default_library=static'],
-                    fallback: ['sdl2_mixer', 'sdl2_mixer_dep'],
-                )
             else
-                sdl2_dep = dependency(
+                # Bundle a shared SDL2 with the port.  This keeps the
+                # runtime independent of the CFW SDL2 SONAME/version and is
+                # also the SDL2 dependency consumed by SoLoud.
+                sdl2_dep = subproject(
                     'sdl2',
-                    static: false,
                     default_options: ['default_library=shared', 'test=false'],
-                    fallback: ['sdl2', 'sdl2_dep'],
-                )
-                sdl_mixer = dependency(
-                    'sdl2_mixer',
-                    static: false,
-                    default_options: ['default_library=shared'],
-                    fallback: ['sdl2_mixer', 'sdl2_mixer_dep'],
-                )
+                ).get_variable('sdl2_dep')
             endif
         endif
         soloud_default_options = ['default_library=static']
         if get_option('portmaster')
-            soloud_default_options += 'SoLoud:portmaster=true'
+            soloud_default_options += 'portmaster=true'
         endif
         soloud = dependency(
             'SoLoud',
@@ -369,7 +369,6 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
         json,
         ogg,
         openmpt,
-        sdl_mixer,
         opus,
         tilengine,
         sdl2_dep,
@@ -379,10 +378,10 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
         subproject('curl', default_options: ['default_library=static'])
     endif
 
-    if host_machine.system() != 'horizon'
+    if host_machine.system() != 'horizon' and not get_option('portmaster')
         dependencies += dependency('cpr')
     endif
-    if host_machine.system() != 'emscripten' and host_machine.system() != 'horizon'
+    if host_machine.system() != 'emscripten' and host_machine.system() != 'horizon' and not get_option('portmaster')
         datachannel = dependency(
             'libdatachannel',
             fallback: ['libdatachannel', 'libdatachannel_dep'],
@@ -399,9 +398,17 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
         add_project_arguments('-DSWITCH', language: ['cpp', 'c'])
     elif get_option('portmaster')
         add_project_arguments('-DPORTMASTER', language: ['cpp', 'c'])
+        # Keep this port self-contained while its hardware backend is brought
+        # up.  The WebRTC lobby and update checker can be restored later.
+        add_project_arguments('-DAPOTRIS_OFFLINE', language: ['cpp', 'c'])
         add_project_arguments('-DGL', language: ['c', 'cpp'])
 
-        dependencies += dependency('glesv2')
+        spruce_glesv2 = meson.get_external_property('spruce_glesv2', '')
+        if spruce_glesv2 == ''
+            dependencies += dependency('glesv2')
+        else
+            dependencies += declare_dependency(link_args: [spruce_glesv2])
+        endif
     elif host_machine.system() == 'android'
         add_project_arguments('-DANDROID', language : ['cpp', 'c'])
         add_project_arguments('-DGL', language : ['c', 'cpp'])
@@ -478,13 +485,30 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
 
     endforeach
 
-    if meson.get_compiler('c').get_id() != 'clang'
+    if meson.get_compiler('c').get_id() != 'clang' and not get_option('portmaster')
         link_args = [
             '-static-libgcc',
             '-static-libstdc++',
         ]
     else
         link_args = []
+    endif
+
+    # Spruce supplies libstdc++.so.6 built for its old GLIBC baseline.  Do not
+    # statically link the host GCC 13 runtime: that archive itself requires
+    # post-2.28 glibc symbols even when application sources use old headers.
+    if get_option('portmaster')
+        # Keep GCC's small support routines static.  libstdc++ still loads
+        # Spruce's libgcc_s.so.1 at runtime through its own DT_NEEDED entry.
+        link_args += '-static-libgcc'
+        spruce_libstdcxx = meson.get_external_property('spruce_libstdcxx', '')
+        if spruce_libstdcxx != ''
+            link_args += spruce_libstdcxx
+        endif
+        spruce_libgcc = meson.get_external_property('spruce_libgcc', '')
+        if spruce_libgcc != ''
+            link_args += spruce_libgcc
+        endif
     endif
 
     name_suffix = ''

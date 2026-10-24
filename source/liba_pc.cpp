@@ -162,7 +162,7 @@ void shutdownMultiplayer() {
     multiplayerLink = nullptr;
     delete linkUniversal;
     linkUniversal = nullptr;
-#if !defined(WEB) && !defined(SWITCH)
+#if !defined(WEB) && !defined(SWITCH) && !defined(APOTRIS_OFFLINE)
     if (rtc::Cleanup().wait_for(std::chrono::seconds(10)) == std::future_status::timeout)
         fprintf(stderr, "RTC cleanup timed out\n");
 #endif

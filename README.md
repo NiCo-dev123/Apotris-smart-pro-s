@@ -296,6 +296,14 @@ ninja: Entering directory `build-web`
 
 ### Portmaster
 
+#### Trimui Smart Pro S / Spruce OS fork
+
+The current Spruce OS port deliberately disables the update checker and online
+multiplayer. This keeps the initial ARM32 package independent of curl/WebRTC
+and their networking stack while the hardware backend is stabilised. Local
+single-player gameplay is unaffected; these services may be restored after the
+port has been validated on hardware.
+
 You'll need to load the portmaster development environment, covered [here](https://portmaster.games/docker.html).
 
 Once inside the container, clone the repo and configure as if it were a native build, but with one key config:

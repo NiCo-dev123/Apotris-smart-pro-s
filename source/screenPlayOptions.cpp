@@ -14,7 +14,7 @@
 #include "LinkWebRTC.hpp"
 #endif
 #include "prng.h"
-#if defined(PC) || defined(ANDROID) || defined(PORTMASTER)
+#if (defined(PC) || defined(ANDROID) || defined(PORTMASTER)) && !defined(APOTRIS_OFFLINE)
 #include <atomic>
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
@@ -22,7 +22,7 @@
 #include <cstring>
 #include <utility>
 
-#if defined(PC) || defined(ANDROID) || defined(PORTMASTER)
+#if (defined(PC) || defined(ANDROID) || defined(PORTMASTER)) && !defined(APOTRIS_OFFLINE)
 static constexpr int ONLINE_PLAYER_COUNT_REFRESH_FRAMES = 60 * 20;
 static std::atomic<int> onlinePlayerCount{-1};
 static std::atomic<unsigned int> onlinePlayerCountRequest{0};
@@ -1897,7 +1897,7 @@ void MatchFoundScene::deinit() {
 }
 
 void MatchMakingScene::init() {
-#if defined(PC) || defined(ANDROID) || defined(PORTMASTER)
+#if (defined(PC) || defined(ANDROID) || defined(PORTMASTER)) && !defined(APOTRIS_OFFLINE)
     fetchOnlinePlayerCount();
 #endif
 
@@ -1909,7 +1909,7 @@ void MatchMakingScene::init() {
         wordSprites[i].setup(i, 64 + i * 3, 256 + i * 12, false);
 
     clearTilemap(29);
-#if defined(PC) || defined(ANDROID) || defined(PORTMASTER)
+#if (defined(PC) || defined(ANDROID) || defined(PORTMASTER)) && !defined(APOTRIS_OFFLINE)
     drawMatchMakingText();
 #else
     std::string str1 = "Who would you like";
@@ -2027,7 +2027,7 @@ void MatchMakingScene::draw() {
         sprite_set_pos(cursorSprites[i], x, y - 5);
     }
 
-#if defined(PC) || defined(ANDROID) || defined(PORTMASTER)
+#if (defined(PC) || defined(ANDROID) || defined(PORTMASTER)) && !defined(APOTRIS_OFFLINE)
     const int totalPlayers = onlinePlayerCount.load();
     if (!onlinePlayerCountShown && totalPlayers >= 0) {
         drawMatchMakingText(totalPlayers);
@@ -2054,7 +2054,7 @@ void MatchMakingScene::update() {
     if (cursorFloat >= 512)
         cursorFloat = 0;
 
-#if defined(PC) || defined(ANDROID) || defined(PORTMASTER)
+#if (defined(PC) || defined(ANDROID) || defined(PORTMASTER)) && !defined(APOTRIS_OFFLINE)
     if (++timer >= ONLINE_PLAYER_COUNT_REFRESH_FRAMES) {
         timer = 0;
         onlinePlayerCountShown = false;

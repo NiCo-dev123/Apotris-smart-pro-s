@@ -231,13 +231,20 @@ void initShaders(SDL_Window* window, int index) {
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 #endif
 
-#ifdef ANDROID
+#if defined(PORTMASTER) || defined(ANDROID)
+    // PortMaster shaders are generated as GLSL ES 3.00, so accepting SDL's
+    // default ES 2 context would make every shader fail at compile time.
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 #endif
 
     shaderContext = SDL_GL_CreateContext(window);
+    if (shaderContext == NULL) {
+        shaderStatus = ShaderStatus::NO_GL;
+        LOGE("Failed to create OpenGL ES context: %s\n", SDL_GetError());
+        return;
+    }
 
     if (shaderStatus == ShaderStatus::NOT_INITED) {
 #ifdef PC
@@ -255,13 +262,28 @@ void initShaders(SDL_Window* window, int index) {
             return;
         }
 
-#ifdef ANDROID
+#if defined(PORTMASTER) || defined(ANDROID)
         if (GLAD_VERSION_MAJOR(version) < 3) {
             LOGE("OpenGL ES 3.0 required but found %d.%d",
                  GLAD_VERSION_MAJOR(version), GLAD_VERSION_MINOR(version));
             shaderStatus = ShaderStatus::NO_GL;
             return;
         }
+
+        int contextMajor = 0;
+        int contextMinor = 0;
+        SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &contextMajor);
+        SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &contextMinor);
+        const char* glVersion =
+            reinterpret_cast<const char*>(glGetString(GL_VERSION));
+        const char* glslVersion = reinterpret_cast<const char*>(
+            glGetString(GL_SHADING_LANGUAGE_VERSION));
+        const char* renderer =
+            reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+        LOGI("OpenGL ES context: %d.%d; GL: %s; GLSL: %s; renderer: %s\n",
+             contextMajor, contextMinor, glVersion ? glVersion : "unknown",
+             glslVersion ? glslVersion : "unknown",
+             renderer ? renderer : "unknown");
 #endif
     }
 
