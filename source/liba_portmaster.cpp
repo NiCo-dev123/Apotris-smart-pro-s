@@ -2,6 +2,7 @@
 
 #include "liba_portmaster.h"
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <dirent.h>
 #include <fstream>
@@ -82,22 +83,53 @@ void windowInit() {
     // Initialize SDL
     window = NULL;
 
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+    fprintf(stderr, "SDL video drivers (%d):", SDL_GetNumVideoDrivers());
+    for (int i = 0; i < SDL_GetNumVideoDrivers(); i++) {
+        const char* driver = SDL_GetVideoDriver(i);
+        fprintf(stderr, " %s", driver ? driver : "unknown");
+    }
+    fprintf(stderr, "\nSDL_VIDEODRIVER=%s\n",
+            getenv("SDL_VIDEODRIVER") ? getenv("SDL_VIDEODRIVER") : "unset");
 
-    SDL_Init(SDL_INIT_VIDEO);
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        fprintf(stderr, "SDL video initialization failed: %s\n", SDL_GetError());
+        exit(EXIT_FAILURE);
+    }
 
     SDL_DisplayMode DM;
     SDL_GetCurrentDisplayMode(0, &DM);
     screenWidth = DM.w;
     screenHeight = DM.h;
 
+    // Spruce's SDL renderer cannot render into an SDL_WINDOW_OPENGL window.
+    // Use the ordinary SDL path for the game; the shader subsystem creates its
+    // own GLES context only when the player explicitly enables a shader.
     window = SDL_CreateWindow("Apotris PortMaster", SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOWPOS_CENTERED, screenWidth, screenHeight,
-                              SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
+                              SDL_WINDOW_SHOWN);
+    if (window == NULL) {
+        fprintf(stderr, "SDL window creation failed: %s\n", SDL_GetError());
+        SDL_Quit();
+        exit(EXIT_FAILURE);
+    }
 
-    renderer = SDL_CreateRenderer(window, -1, 0);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (renderer == NULL) {
+        fprintf(stderr, "Accelerated SDL renderer unavailable: %s\n",
+                SDL_GetError());
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    }
+    if (renderer == NULL) {
+        fprintf(stderr, "SDL renderer creation failed: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        exit(EXIT_FAILURE);
+    }
+
+    SDL_RendererInfo rendererInfo;
+    if (SDL_GetRendererInfo(renderer, &rendererInfo) == 0) {
+        fprintf(stderr, "Using SDL renderer: %s\n", rendererInfo.name);
+    }
 
     SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
     if (SDL_NumJoysticks() > 0) {
