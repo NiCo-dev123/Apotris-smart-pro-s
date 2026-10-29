@@ -8,7 +8,8 @@ DIST_DIR="$ROOT_DIR/dist"
 STAGE_DIR="$DIST_DIR/apotris-port"
 ARCHIVE="$DIST_DIR/apotris.zip"
 BINARY="$BUILD_DIR/Apotris"
-SDL2_RUNTIME="${SDL2_RUNTIME:-$BUILD_DIR/subprojects/SDL2-2.28.5/libsdl2.so}"
+SDL2_RUNTIME="$ROOT_DIR/runtime/aarch64/libsdl2.so"
+SDL2_LICENSE="$ROOT_DIR/runtime/aarch64/LICENSE.SDL2.txt"
 
 require_command() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -48,18 +49,24 @@ if [[ ! -x "$BINARY" ]]; then
     exit 1
 fi
 
-if [[ ! -f "$SDL2_RUNTIME" ]]; then
-    printf 'Missing SDL2 build artifact: %s\nRun ./scripts/build-tsps.sh first.\n' "$SDL2_RUNTIME" >&2
+if [[ ! -f "$SDL2_RUNTIME" || ! -f "$SDL2_LICENSE" ]]; then
+    printf 'Missing validated SDL2 runtime or its license in runtime/aarch64.\n' >&2
     exit 1
 fi
 
 require_aarch64_elf "$BINARY"
 require_aarch64_elf "$SDL2_RUNTIME"
+if ! readelf -d "$SDL2_RUNTIME" | grep -q 'SONAME.*libSDL2-2.0.so.0'; then
+    printf 'Unexpected SDL2 SONAME: %s\n' "$SDL2_RUNTIME" >&2
+    exit 1
+fi
 
 mapfile -t glibc_versions < <(readelf --version-info "$BINARY" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -Vu)
 mapfile -t glibcxx_versions < <(readelf --version-info "$BINARY" | grep -oE 'GLIBCXX_[0-9]+\.[0-9]+(\.[0-9]+)?' | sed 's/GLIBCXX_//' | sort -Vu)
+mapfile -t sdl_glibc_versions < <(readelf --version-info "$SDL2_RUNTIME" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -Vu)
 require_at_most GLIBC 2.33 "${glibc_versions[@]}"
 require_at_most GLIBCXX 3.4.28 "${glibcxx_versions[@]}"
+require_at_most 'SDL2 GLIBC' 2.33 "${sdl_glibc_versions[@]}"
 
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR/apotris/lib"
@@ -73,7 +80,7 @@ cp -a "$ROOT_DIR/assets" "$STAGE_DIR/apotris/assets"
 
 # The executable was linked with NEEDED=libsdl2.so, hence this intentional name.
 cp "$SDL2_RUNTIME" "$STAGE_DIR/apotris/lib/libsdl2.so"
-cp "$ROOT_DIR/subprojects/SDL2-2.28.5/LICENSE.txt" "$STAGE_DIR/apotris/lib/LICENSE.SDL2.txt"
+cp "$SDL2_LICENSE" "$STAGE_DIR/apotris/lib/LICENSE.SDL2.txt"
 
 mkdir -p "$DIST_DIR"
 rm -f "$ARCHIVE"
