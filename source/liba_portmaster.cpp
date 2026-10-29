@@ -150,6 +150,24 @@ void windowInit() {
 
 void key_poll() {}
 
+// SDL names face buttons after the Xbox layout (A=south, B=east, X=west,
+// Y=north).  The Trimui face buttons use Nintendo labels, so normalize raw
+// positional events before they enter Apotris' logical key mappings.
+static int normalizeNintendoFaceButton(int button) {
+    switch (button) {
+    case SDL_CONTROLLER_BUTTON_A:
+        return SDL_CONTROLLER_BUTTON_B;
+    case SDL_CONTROLLER_BUTTON_B:
+        return SDL_CONTROLLER_BUTTON_A;
+    case SDL_CONTROLLER_BUTTON_X:
+        return SDL_CONTROLLER_BUTTON_Y;
+    case SDL_CONTROLLER_BUTTON_Y:
+        return SDL_CONTROLLER_BUTTON_X;
+    default:
+        return button;
+    }
+}
+
 void handleInput() {
     SDL_Event event;
 
@@ -158,11 +176,11 @@ void handleInput() {
 
         switch (event.type) {
         case SDL_CONTROLLERBUTTONDOWN:
-            key = event.cbutton.button;
+            key = normalizeNintendoFaceButton(event.cbutton.button);
             currentlyPressed.insert(key);
             break;
         case SDL_CONTROLLERBUTTONUP:
-            key = event.cbutton.button;
+            key = normalizeNintendoFaceButton(event.cbutton.button);
             currentlyPressed.erase(key);
             break;
         case SDL_CONTROLLERAXISMOTION:
