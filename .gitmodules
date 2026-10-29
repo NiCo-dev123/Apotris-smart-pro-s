@@ -1,7 +1,3 @@
-[submodule "tilengine"]
-	path = subprojects/Tilengine
-	url = https://gitea.com/Apotris/Tilengine.git
-	branch = static
 [submodule "subprojects/general-tools"]
 	path = subprojects/general-tools
 	url = https://gitea.com/Apotris/general-tools.git
