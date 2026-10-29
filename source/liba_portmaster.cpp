@@ -96,6 +96,10 @@ void windowInit() {
         exit(EXIT_FAILURE);
     }
 
+    const char* activeVideoDriver = SDL_GetCurrentVideoDriver();
+    fprintf(stderr, "SDL active video driver: %s\n",
+            activeVideoDriver ? activeVideoDriver : "unknown");
+
     SDL_DisplayMode DM;
     SDL_GetCurrentDisplayMode(0, &DM);
     screenWidth = DM.w;

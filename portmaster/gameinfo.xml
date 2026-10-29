@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gameList>
+  <game>
+    <path>./Apotris.sh</path>
+    <name>Apotris</name>
+    <desc>A modern Tetris game for Trimui Smart Pro S.</desc>
+    <genre>Puzzle</genre>
+    <developer>Akouzoukos</developer>
+    <publisher>NiCo-dev123</publisher>
+  </game>
+</gameList>

@@ -1,0 +1,30 @@
+{
+    "version": 3,
+    "name": "apotris.zip",
+    "items": [
+        "Apotris.sh",
+        "apotris"
+    ],
+    "items_opt": null,
+    "attr": {
+        "title": "Apotris",
+        "porter": [
+            "NiCo-dev123"
+        ],
+        "desc": "A modern Tetris game ported to Trimui Smart Pro S.",
+        "desc_md": "A modern Tetris game ported to the **Trimui Smart Pro S**.",
+        "inst": "Extract this archive into Roms/ports.",
+        "inst_md": "Extract this archive into `Roms/ports`.",
+        "genres": [
+            "puzzle"
+        ],
+        "image": {},
+        "rtr": true,
+        "exp": true,
+        "runtime": null,
+        "reqs": [],
+        "arch": [
+            "aarch64"
+        ]
+    }
+}

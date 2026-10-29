@@ -21,7 +21,11 @@ name = 'Apotris'
 # otherwise emits the time64 symbols introduced by later glibc. This must be
 # global and declared before subprojects so SDL2 and SoLoud inherit it.
 if get_option('portmaster')
-    add_global_arguments('-D_TIME_BITS=32', language: ['c', 'cpp'])
+    # `_TIME_BITS=32` is needed by the legacy 32-bit armhf runtime only.
+    # AArch64 already has a 64-bit time_t and rejects that define.
+    if host_machine.cpu_family() == 'arm'
+        add_global_arguments('-D_TIME_BITS=32', language: ['c', 'cpp'])
+    endif
 
     # A local cross-file may supply old glibc headers matching the runtime.
     # GCC 13's target headers take precedence over ordinary -I paths, so the
@@ -498,9 +502,9 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
     # statically link the host GCC 13 runtime: that archive itself requires
     # post-2.28 glibc symbols even when application sources use old headers.
     if get_option('portmaster')
-        # Keep GCC's small support routines static.  libstdc++ still loads
-        # Spruce's libgcc_s.so.1 at runtime through its own DT_NEEDED entry.
-        link_args += '-static-libgcc'
+        # libstdc++.so requires the dynamic GCC unwinder.  In particular,
+        # -static-libgcc removes the provider of _Unwind_* symbols at link
+        # time. The compatible runtime will be audited and bundled later.
         spruce_libstdcxx = meson.get_external_property('spruce_libstdcxx', '')
         if spruce_libstdcxx != ''
             link_args += spruce_libstdcxx

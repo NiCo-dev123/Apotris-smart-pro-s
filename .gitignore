@@ -1,4 +1,6 @@
 build*/
+.tsps-build/
+dist/
 bin/
 .cache/
 .vscode/
@@ -20,6 +22,7 @@ CLEANUP.md
 
 # Per-machine Spruce sysroot location used by the armhf cross build.
 meson/spruce-armhf.local.ini
+meson/spruce-aarch64.local.ini
 
 dkarm.ini
 # macOS metadata
