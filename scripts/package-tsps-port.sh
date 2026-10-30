@@ -2,7 +2,7 @@
 # Package a successfully built aarch64 Apotris binary as a PortMaster ZIP.
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build-spruce-aarch64"
 DIST_DIR="$ROOT_DIR/dist"
 STAGE_DIR="$DIST_DIR/apotris-port"

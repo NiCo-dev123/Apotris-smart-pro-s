@@ -31,7 +31,7 @@ Run this command to build the project :
 Finally, run this command to package the project into a port :
 
 ```
-./package-tsps-port.sh
+./scripts/package-tsps-port.sh
 ```
 
 ## Audio customization
