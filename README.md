@@ -8,6 +8,11 @@ This project was (_almost_) fully handled by Codex Terra agent. I wanted to expe
 
 Overall, it took me about 10 hours and a few weeks to have a working port. I was expecting the process to go faster, but it was a nice experiment.
 
+## Online mode
+
+To make the process easier, the port only feature offline gameplay.
+Online feature might get added in the future.
+
 ## Download the port
 
 You can download the port directly from the [Releases page](https://github.com/NiCo-dev123/Apotris-smart-pro-s/releases)
