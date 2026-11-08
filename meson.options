@@ -1,4 +1,8 @@
 option('portmaster', type : 'boolean', value: false)
+option('portmaster_online', type : 'boolean', value: false,
+       description: 'Build experimental online gameplay dependencies for the PortMaster target')
+option('portmaster_wss_diagnostic', type : 'boolean', value: false,
+       description: 'Build only the isolated libdatachannel WSS diagnostic for PortMaster')
 
 # Options specific to N3DS port:
 option('debug_ui', type : 'boolean', value: false)

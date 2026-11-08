@@ -14,6 +14,8 @@ LOCAL_CROSS_FILE="$ROOT_DIR/meson/spruce-aarch64.local.ini"
 LOCAL_CROSS_SUM="$CACHE_DIR/spruce-aarch64.local.ini.cksum"
 READY_FILE="$CACHE_DIR/toolchain-aarch64.ready"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '4')}"
+PORTMASTER_ONLINE="${PORTMASTER_ONLINE:-0}"
+PORTMASTER_WSS_DIAGNOSTIC="${PORTMASTER_WSS_DIAGNOSTIC:-0}"
 C_COMPILER='aarch64-linux-gnu-gcc-10'
 CXX_COMPILER='aarch64-linux-gnu-g++-10'
 GCC_INCLUDE_DIR='/usr/lib/gcc-cross/aarch64-linux-gnu/10/include'
@@ -24,6 +26,16 @@ require_command() {
         exit 1
     }
 }
+
+case "$PORTMASTER_ONLINE:$PORTMASTER_WSS_DIAGNOSTIC" in
+    0:0) meson_online_options=(-Dportmaster_online=false -Dportmaster_wss_diagnostic=false) ;;
+    1:0) meson_online_options=(-Dportmaster_online=true -Dportmaster_wss_diagnostic=false --force-fallback-for=zlib,cpr,curl,openssl,libdatachannel) ;;
+    0:1) meson_online_options=(-Dportmaster_online=false -Dportmaster_wss_diagnostic=true --force-fallback-for=zlib,openssl,libdatachannel) ;;
+    *)
+        printf 'Set exactly one of PORTMASTER_ONLINE and PORTMASTER_WSS_DIAGNOSTIC to 1.\n' >&2
+        exit 1
+        ;;
+esac
 
 for command in "$C_COMPILER" "$CXX_COMPILER" ninja readelf; do
     require_command "$command"
@@ -61,16 +73,19 @@ if [[ -d "$BUILD_DIR" && "$current_cross_sum" == "$previous_cross_sum" ]]; then
     "$MESON" setup --reconfigure "$BUILD_DIR" \
         --cross-file "$ROOT_DIR/meson/spruce-aarch64.ini" \
         --cross-file "$LOCAL_CROSS_FILE" --force-fallback-for=zlib \
+        "${meson_online_options[@]}" \
         -Dportmaster=true --buildtype=release
 elif [[ -d "$BUILD_DIR" ]]; then
     "$MESON" setup --wipe "$BUILD_DIR" \
         --cross-file "$ROOT_DIR/meson/spruce-aarch64.ini" \
         --cross-file "$LOCAL_CROSS_FILE" --force-fallback-for=zlib \
+        "${meson_online_options[@]}" \
         -Dportmaster=true --buildtype=release
 else
     "$MESON" setup "$BUILD_DIR" \
         --cross-file "$ROOT_DIR/meson/spruce-aarch64.ini" \
         --cross-file "$LOCAL_CROSS_FILE" --force-fallback-for=zlib \
+        "${meson_online_options[@]}" \
         -Dportmaster=true --buildtype=release
 fi
 
@@ -80,6 +95,7 @@ if ! ninja -C "$BUILD_DIR" -t commands | grep -F -- "-idirafter $GCC_INCLUDE_DIR
     "$MESON" setup --wipe "$BUILD_DIR" \
         --cross-file "$ROOT_DIR/meson/spruce-aarch64.ini" \
         --cross-file "$LOCAL_CROSS_FILE" --force-fallback-for=zlib \
+        "${meson_online_options[@]}" \
         -Dportmaster=true --buildtype=release
 fi
 printf '%s\n' "$current_cross_sum" > "$LOCAL_CROSS_SUM"

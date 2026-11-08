@@ -16,6 +16,8 @@ project(
 
 # The name of your project.
 name = 'Apotris'
+portmaster_online = get_option('portmaster') and get_option('portmaster_online')
+portmaster_wss_diagnostic = get_option('portmaster') and get_option('portmaster_wss_diagnostic')
 
 # Spruce OS uses 32-bit time_t (GLIBC 2.28). Building with newer ARM headers
 # otherwise emits the time64 symbols introduced by later glibc. This must be
@@ -382,10 +384,10 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
         subproject('curl', default_options: ['default_library=static'])
     endif
 
-    if host_machine.system() != 'horizon' and not get_option('portmaster')
+    if host_machine.system() != 'horizon' and (not get_option('portmaster') or portmaster_online)
         dependencies += dependency('cpr')
     endif
-    if host_machine.system() != 'emscripten' and host_machine.system() != 'horizon' and not get_option('portmaster')
+    if host_machine.system() != 'emscripten' and host_machine.system() != 'horizon' and (not get_option('portmaster') or portmaster_online or portmaster_wss_diagnostic)
         datachannel = dependency(
             'libdatachannel',
             fallback: ['libdatachannel', 'libdatachannel_dep'],
@@ -402,9 +404,11 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
         add_project_arguments('-DSWITCH', language: ['cpp', 'c'])
     elif get_option('portmaster')
         add_project_arguments('-DPORTMASTER', language: ['cpp', 'c'])
-        # Keep this port self-contained while its hardware backend is brought
-        # up.  The WebRTC lobby and update checker can be restored later.
-        add_project_arguments('-DAPOTRIS_OFFLINE', language: ['cpp', 'c'])
+        # Keep the stable port self-contained. The separate online diagnostic
+        # profile opts in explicitly while its dependencies are audited.
+        if not portmaster_online
+            add_project_arguments('-DAPOTRIS_OFFLINE', language: ['cpp', 'c'])
+        endif
         add_project_arguments('-DGL', language: ['c', 'cpp'])
 
         spruce_glesv2 = meson.get_external_property('spruce_glesv2', '')
@@ -442,6 +446,18 @@ if host_machine.system() != 'gba' and host_machine.system() != 'n3ds'
     endif
 
     add_project_arguments('-DTE', language: ['c', 'cpp'])
+
+    # This deliberately does not alter the stable Apotris package. It proves
+    # the embedded TLS + libdatachannel WebSocket path before online gameplay
+    # is re-enabled for PortMaster.
+    if portmaster_wss_diagnostic
+        executable(
+            'apotris-wss-diagnostic',
+            files('diagnostics/apotris-wss-diagnostic.cpp'),
+            dependencies: [datachannel],
+            install: false,
+        )
+    endif
 
     generated_files = []
     # Assemble bin2s targets

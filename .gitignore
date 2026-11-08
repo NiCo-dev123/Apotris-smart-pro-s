@@ -19,6 +19,7 @@ apotris*.png
 TODO.md
 SPECS.md
 CLEANUP.md
+ONLINE.md
 
 # Per-machine Spruce sysroot location used by the armhf cross build.
 meson/spruce-armhf.local.ini
