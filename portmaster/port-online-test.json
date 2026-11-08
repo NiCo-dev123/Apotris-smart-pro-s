@@ -1,0 +1,30 @@
+{
+    "version": 3,
+    "name": "apotris-online-test.zip",
+    "items": [
+        "Apotris-online-test.sh",
+        "apotris-online-test"
+    ],
+    "items_opt": null,
+    "attr": {
+        "title": "Apotris Online Test",
+        "porter": [
+            "NiCo-dev123"
+        ],
+        "desc": "Experimental online profile for Trimui Smart Pro S.",
+        "desc_md": "Experimental **online** profile for the Trimui Smart Pro S. Keep the stable Apotris port installed separately.",
+        "inst": "Extract this archive into Roms/ports.",
+        "inst_md": "Extract this archive into `Roms/ports` alongside the stable Apotris port.",
+        "genres": [
+            "puzzle"
+        ],
+        "image": {},
+        "rtr": true,
+        "exp": true,
+        "runtime": null,
+        "reqs": [],
+        "arch": [
+            "aarch64"
+        ]
+    }
+}

@@ -800,9 +800,8 @@ void updateBatteryInfo() {
 }
 
 void checkLatestVersion() {
-    cpr::Response r =
-        cpr::Get(cpr::Url{"https://api.apotris.com/v1/latest-version"});
-
+    // This service is optional.  Do not delay startup while Wi-Fi, DNS or the
+    // API is unavailable; the callback below handles all non-200 responses.
     cpr::GetCallback(
         [updateAvailable = &updateAvailable](cpr::Response r) {
             log("status: " + std::to_string(r.status_code));

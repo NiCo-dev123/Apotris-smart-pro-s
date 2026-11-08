@@ -195,6 +195,13 @@ public:
             .caCertificatePemFile =
                 certPath.empty() ? std::nullopt : std::make_optional(certPath),
         });
+#elif defined(PORTMASTER)
+        // PortMaster images do not provide a CA bundle consistently.  Keep the
+        // trust store alongside the game so WSS verification is independent of
+        // the CFW, while the firmware continues to provide the GPU driver.
+        rtc::WebSocketConfiguration webSocketConfig;
+        webSocketConfig.caCertificatePemFile = "assets/ssl/cacert.pem";
+        ws = std::make_shared<rtc::WebSocket>(std::move(webSocketConfig));
 #else
         ws = std::make_shared<rtc::WebSocket>();
 #endif

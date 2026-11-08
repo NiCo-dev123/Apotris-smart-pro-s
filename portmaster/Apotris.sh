@@ -30,6 +30,17 @@ export XDG_CONFIG_HOME="$GAMEDIR/saves/config"
 export XDG_DATA_HOME="$GAMEDIR/saves/data"
 export SDL_GAMECONTROLLERCONFIG="${sdl_controllerconfig:-${SDL_GAMECONTROLLERCONFIG:-}}"
 
+# The online test profile uses curl and libdatachannel with certificate
+# verification enabled.  Spruce does not guarantee a system CA bundle, so use
+# the one shipped with Apotris.  These variables are harmless in the stable
+# offline profile as well.
+if [ -r "$GAMEDIR/assets/ssl/cacert.pem" ]; then
+    export CURL_CA_BUNDLE="$GAMEDIR/assets/ssl/cacert.pem"
+    export SSL_CERT_FILE="$GAMEDIR/assets/ssl/cacert.pem"
+else
+    echo "Warning: bundled CA certificate missing; online services will be unavailable."
+fi
+
 # The validated SDL 2.32.6 runtime is bundled under the lowercase filename
 # required by Apotris. Firmware supplies only the Mali/EGL/GLES driver chain.
 export LD_LIBRARY_PATH="$GAMEDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

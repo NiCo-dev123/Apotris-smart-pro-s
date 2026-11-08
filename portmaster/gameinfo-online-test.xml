@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gameList>
+  <game>
+    <path>./Apotris-online-test.sh</path>
+    <name>Apotris Online Test</name>
+    <desc>Experimental online profile for Trimui Smart Pro S.</desc>
+    <genre>Puzzle</genre>
+    <developer>Akouzoukos</developer>
+    <publisher>NiCo-dev123</publisher>
+  </game>
+</gameList>
