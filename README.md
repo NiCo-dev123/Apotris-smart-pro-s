@@ -10,8 +10,7 @@ Overall, it took me about 10 hours and a few weeks to have a working port. I was
 
 ## Online mode
 
-To make the process easier, the port only feature offline gameplay.
-Online feature might get added in the future.
+It is supported but still under testing.
 
 ## Download the port
 
