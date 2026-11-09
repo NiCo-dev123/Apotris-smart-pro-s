@@ -16,6 +16,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifndef APOTRIS_OFFLINE
+#include <cpr/cpr.h>
+#include <nlohmann/json.hpp>
+#endif
+
 #include "def.h"
 #include "shader.h"
 
@@ -36,6 +41,38 @@ int set_rumble(int strength);
 void handleInput();
 void handleAnalogInput(int axis, int value);
 void updateBatteryInfo();
+
+#ifndef APOTRIS_OFFLINE
+static void checkLatestVersion() {
+    // A failed network request must not delay or prevent local play.
+    cpr::GetCallback(
+        [](cpr::Response response) {
+            std::cerr << "Online update check: HTTP " << response.status_code
+                      << "; cURL error="
+                      << static_cast<int>(response.error.code) << " ("
+                      << response.error.message << ")" << std::endl;
+
+            if (response.status_code != 200)
+                return;
+
+            try {
+                const auto body = nlohmann::json::parse(response.text);
+                if (body.contains("latestVersion") &&
+                    body["latestVersion"].is_string()) {
+                    const std::string version =
+                        body["latestVersion"].get<std::string>();
+                    if (version != "v" APOTRIS_VERSION)
+                        updateAvailable = version;
+                }
+            } catch (const nlohmann::json::exception&) {
+                std::cerr << "Online update check: invalid JSON response"
+                          << std::endl;
+            }
+        }, cpr::Url{"https://api.apotris.com/v1/latest-version"},
+        cpr::Ssl(cpr::ssl::CaInfo{
+            cpr::fs::path{"assets/ssl/cacert.pem"}}));
+}
+#endif
 
 std::unordered_set<uint32_t> currentKeys;
 std::unordered_set<uint32_t> previousKeys;
@@ -146,6 +183,10 @@ void windowInit() {
 
     nanotime_step_init(&stepper, (uint64_t)(NANOTIME_NSEC_PER_SEC / FPS_TARGET),
                        nanotime_now_max(), nanotime_now, nanotime_sleep);
+
+#ifndef APOTRIS_OFFLINE
+    checkLatestVersion();
+#endif
 }
 
 void key_poll() {}

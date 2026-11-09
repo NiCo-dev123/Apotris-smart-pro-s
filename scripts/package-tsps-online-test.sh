@@ -31,7 +31,63 @@ require_at_most() {
     done
 }
 
-for command in readelf zip cp find sort; do
+require_aarch64_elf() {
+    readelf -h "$1" | grep -q 'Machine:.*AArch64' || {
+        printf 'Not an AArch64 ELF: %s\n' "$1" >&2
+        exit 1
+    }
+}
+
+require_expected_needed() {
+    local artifact="$1" library expected
+    local -a needed expected_needed
+    mapfile -t needed < <(readelf -d "$artifact" |
+        awk '/NEEDED/ {gsub(/[\[\]]/, "", $NF); print $NF}')
+    expected_needed=(
+        libstdc++.so.6 libm.so.6 libgcc_s.so.1 libc.so.6
+        ld-linux-aarch64.so.1 libpthread.so.0 libsdl2.so libdl.so.2
+    )
+
+    for library in "${needed[@]}"; do
+        case "$library" in
+        libstdc++.so.6|libm.so.6|libgcc_s.so.1|libc.so.6|ld-linux-aarch64.so.1|libpthread.so.0|libsdl2.so|libdl.so.2)
+            ;;
+        *)
+            printf 'Unexpected dynamic dependency in %s: %s\n' \
+                "$artifact" "$library" >&2
+            exit 1
+            ;;
+        esac
+    done
+
+    for expected in "${expected_needed[@]}"; do
+        printf '%s\n' "${needed[@]}" | grep -Fxq "$expected" || {
+            printf 'Required dynamic dependency missing in %s: %s\n' \
+                "$artifact" "$expected" >&2
+            exit 1
+        }
+    done
+
+    printf '%s\n' 'Online executable dynamic dependencies (all expected):'
+    printf '  %s\n' "${needed[@]}"
+}
+
+validate_ca_bundle() {
+    local bundle="$1" certificate_count
+    [[ -s "$bundle" ]] || {
+        printf 'Missing or empty CA bundle: %s\n' "$bundle" >&2
+        exit 1
+    }
+    certificate_count="$(grep -c '^-----BEGIN CERTIFICATE-----$' "$bundle" || true)"
+    [[ "$certificate_count" -gt 0 ]] || {
+        printf 'No PEM certificates found in CA bundle: %s\n' "$bundle" >&2
+        exit 1
+    }
+    printf 'CA bundle: %s certificates, SHA-256 %s\n' \
+        "$certificate_count" "$(sha256sum "$bundle" | awk '{print $1}')"
+}
+
+for command in awk cmp grep readelf sed sha256sum sort stat tail unzip zip; do
     require_command "$command"
 done
 
@@ -46,19 +102,22 @@ PORTMASTER_ONLINE=1 "$ROOT_DIR/scripts/build-tsps.sh"
     exit 1
 }
 
-readelf -h "$BINARY" | grep -q 'Machine:.*AArch64' || {
-    printf 'Online build is not AArch64: %s\n' "$BINARY" >&2
+require_aarch64_elf "$BINARY"
+require_aarch64_elf "$SDL2_RUNTIME"
+readelf -d "$SDL2_RUNTIME" | grep -q 'SONAME.*libSDL2-2.0.so.0' || {
+    printf 'Unexpected SDL2 SONAME: %s\n' "$SDL2_RUNTIME" >&2
     exit 1
 }
 mapfile -t glibc_versions < <(readelf --version-info "$BINARY" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -Vu)
 mapfile -t glibcxx_versions < <(readelf --version-info "$BINARY" | grep -oE 'GLIBCXX_[0-9]+\.[0-9]+(\.[0-9]+)?' | sed 's/GLIBCXX_//' | sort -Vu)
 mapfile -t cxxabi_versions < <(readelf --version-info "$BINARY" | grep -oE 'CXXABI_[0-9]+(\.[0-9]+)+' | sed 's/CXXABI_//' | sort -Vu)
+mapfile -t sdl_glibc_versions < <(readelf --version-info "$SDL2_RUNTIME" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -Vu)
 require_at_most GLIBC 2.33 "${glibc_versions[@]}"
 require_at_most GLIBCXX 3.4.28 "${glibcxx_versions[@]}"
 require_at_most CXXABI 1.3.13 "${cxxabi_versions[@]}"
-
-printf '%s\n' 'Online executable dynamic dependencies:'
-readelf -d "$BINARY" | awk '/NEEDED/ {gsub(/[\[\]]/, "", $NF); print "  " $NF}'
+require_at_most 'SDL2 GLIBC' 2.33 "${sdl_glibc_versions[@]}"
+require_expected_needed "$BINARY"
+validate_ca_bundle "$ROOT_DIR/assets/ssl/cacert.pem"
 
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR/apotris-online-test/lib"
@@ -70,6 +129,8 @@ cp "$BINARY" "$STAGE_DIR/apotris-online-test/Apotris"
 cp -a "$ROOT_DIR/assets" "$STAGE_DIR/apotris-online-test/assets"
 cp "$SDL2_RUNTIME" "$STAGE_DIR/apotris-online-test/lib/libsdl2.so"
 cp "$SDL2_LICENSE" "$STAGE_DIR/apotris-online-test/lib/LICENSE.SDL2.txt"
+cmp "$ROOT_DIR/assets/ssl/cacert.pem" \
+    "$STAGE_DIR/apotris-online-test/assets/ssl/cacert.pem"
 
 # The online profile statically incorporates these projects.  Ship their
 # notices with the test package before promoting it beyond local testing.
@@ -94,4 +155,24 @@ rm -f "$ARCHIVE"
     zip -qr "$ARCHIVE" Apotris-online-test.sh apotris-online-test
 )
 
+unzip -tqq "$ARCHIVE"
+for package_item in \
+    Apotris-online-test.sh \
+    apotris-online-test/Apotris \
+    apotris-online-test/lib/libsdl2.so \
+    apotris-online-test/assets/ssl/cacert.pem \
+    apotris-online-test/LICENSE.cpr.txt \
+    apotris-online-test/LICENSE.curl.txt \
+    apotris-online-test/LICENSE.openssl.txt \
+    apotris-online-test/LICENSE.libdatachannel.txt \
+    apotris-online-test/LICENSE.libjuice.txt \
+    apotris-online-test/LICENSE.usrsctp.txt; do
+    unzip -Z1 "$ARCHIVE" | grep -Fxq "$package_item" || {
+        printf 'Package integrity check failed; missing %s\n' "$package_item" >&2
+        exit 1
+    }
+done
+
 printf 'Online test PortMaster package created: %s\n' "$ARCHIVE"
+printf 'Sizes: executable %s bytes; ZIP %s bytes\n' \
+    "$(stat -c '%s' "$BINARY")" "$(stat -c '%s' "$ARCHIVE")"

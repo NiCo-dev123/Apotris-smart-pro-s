@@ -109,6 +109,9 @@ class LinkUniversal {
     void connectionFailed(const std::string& reason) {
         if (!active)
             return;
+#ifdef PORTMASTER
+        std::cerr << "Online connection failed: " << reason << std::endl;
+#endif
         deactivate();
         exceptionReason = reason;
     }
@@ -394,6 +397,9 @@ public:
             initWebSocketConfig();
             ws->onOpen([mailbox = events, epoch = session]() {
                 mailbox->post(epoch, [](LinkUniversal& self) {
+#ifdef PORTMASTER
+                    std::cerr << "Online signaling connected" << std::endl;
+#endif
                     self.signalingReady = true;
                     json info = {{ID, "broadcast"},
                                  {TYPE, PLAYER_INFO},
@@ -517,6 +523,10 @@ public:
         };
         dataChannel->onOpen([post, peerId]() {
             post([peerId](LinkUniversal& self) {
+#ifdef PORTMASTER
+                std::cerr << "Online data channel connected: " << peerId
+                          << std::endl;
+#endif
                 if (auto player = self.playerStringToId.find(peerId);
                     player != self.playerStringToId.end())
                     initPlayer(player->second);

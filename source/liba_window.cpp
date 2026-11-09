@@ -804,6 +804,12 @@ void checkLatestVersion() {
     // API is unavailable; the callback below handles all non-200 responses.
     cpr::GetCallback(
         [updateAvailable = &updateAvailable](cpr::Response r) {
+#ifdef PORTMASTER
+            std::cerr << "Online update check: HTTP " << r.status_code
+                      << "; cURL error="
+                      << static_cast<int>(r.error.code) << " ("
+                      << r.error.message << ")" << std::endl;
+#endif
             log("status: " + std::to_string(r.status_code));
             log("text: " + r.text);
             try {
@@ -820,7 +826,11 @@ void checkLatestVersion() {
             } catch (const nlohmann::json::exception& e) {
                 std::cerr << "JSON parse error: " << e.what() << std::endl;
             }
-        },
-        cpr::Url{"https://api.apotris.com/v1/latest-version"});
+        }, cpr::Url{"https://api.apotris.com/v1/latest-version"}
+#ifdef PORTMASTER
+        , cpr::Ssl(cpr::ssl::CaInfo{
+              cpr::fs::path{"assets/ssl/cacert.pem"}})
+#endif
+    );
 }
 #endif

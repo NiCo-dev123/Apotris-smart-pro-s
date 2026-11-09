@@ -20,6 +20,7 @@
 #include <nlohmann/json.hpp>
 #endif
 #include <cstring>
+#include <iostream>
 #include <utility>
 
 #if (defined(PC) || defined(ANDROID) || defined(PORTMASTER)) && !defined(APOTRIS_OFFLINE)
@@ -62,15 +63,32 @@ static void fetchOnlinePlayerCount() {
     onlinePlayerCount.store(-1);
     const unsigned int request = ++onlinePlayerCountRequest;
     const auto callback = [request](cpr::Response response) {
-        if (response.status_code != 200)
+        if (response.status_code != 200) {
+#ifdef PORTMASTER
+            std::cerr << "Online player count: HTTP " << response.status_code
+                      << "; cURL error="
+                      << static_cast<int>(response.error.code) << " ("
+                      << response.error.message << ")"
+                      << std::endl;
+#endif
             return;
+        }
 
         try {
             const auto body = nlohmann::json::parse(response.text);
             if (onlinePlayerCountRequest.load() == request &&
-                body.contains("total") && body["total"].is_number_integer())
-                onlinePlayerCount.store(body["total"].get<int>());
+                body.contains("total") && body["total"].is_number_integer()) {
+                const int total = body["total"].get<int>();
+                onlinePlayerCount.store(total);
+#ifdef PORTMASTER
+                std::cerr << "Online player count: " << total << std::endl;
+#endif
+            }
         } catch (const nlohmann::json::exception&) {
+#ifdef PORTMASTER
+            std::cerr << "Online player count: invalid JSON response"
+                      << std::endl;
+#endif
         }
     };
 
@@ -84,8 +102,15 @@ static void fetchOnlinePlayerCount() {
     }
 #endif
 
+#ifdef PORTMASTER
+    cpr::GetCallback(
+        callback, cpr::Url{"https://api.apotris.com/v1/online-players"},
+        cpr::Ssl(cpr::ssl::CaInfo{
+            cpr::fs::path{"assets/ssl/cacert.pem"}}));
+#else
     cpr::GetCallback(callback,
                      cpr::Url{"https://api.apotris.com/v1/online-players"});
+#endif
 }
 
 static void drawMatchMakingText(int totalPlayers = -1) {
